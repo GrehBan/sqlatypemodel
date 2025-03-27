@@ -3,7 +3,7 @@ name = "sqlatypemodel"
 version = "0.2.0"
 description = ""
 authors = [
-    {name = "Your Name",email = "you@example.com"}
+    {name = "grehban",email = "maximfeedback19@gmail.com"}
 ]
 license = {text = "MIT"}
 readme = "README.md"
