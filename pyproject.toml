@@ -1,17 +1,38 @@
-[tool.poetry]
+[project]
 name = "sqlatypemodel"
-version = "0.0.1"
-description = "Tool for use class-based models as data types in sqlalchemy"
-authors = ["grehban <maximfeedback19@gmail.com>"]
-license = "MIT"
+version = "0.2.0"
+description = ""
+authors = [
+    {name = "Your Name",email = "you@example.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "sqlalchemy (>=2.0.40,<3.0.0)",
+    "pydantic (>=2.11.0,<3.0.0)",
+    "black (>=25.1.0,<26.0.0)",
+    "isort (>=6.0.1,<7.0.0)"
+]
 
-[tool.poetry.dependencies]
-python = "^3.8"
-SQLAlchemy = "^1.4.41"
-typing-extensions = "^4.4.0"
+[tool.black]
+line-length = 79
+target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
+exclude = '''
+(
+    \.eggs
+  | \.git
+  | \.tox
+  | build
+  | dist
+  | venv
+  | docs
+)
+'''
 
-[tool.poetry.dev-dependencies]
+[tool.isort]
+profile = "black"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"

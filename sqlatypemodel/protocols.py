@@ -1,21 +1,15 @@
-from typing import Any, Callable, Protocol, Type, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
 
+from sqlalchemy.engine.default import DefaultDialect
 
-class ModelProto(Protocol):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        ...
-
-
-@runtime_checkable
-class JsonableModelProto(ModelProto, Protocol):
-    def json(self, *args: Any, **kwargs: Any) -> str:
-        ...
-
-
-class PydanticConfigProto(Protocol):
-    json_loads: Callable[[str], Any]
+T = TypeVar("T")
 
 
 @runtime_checkable
-class PydanticModelProto(JsonableModelProto, Protocol):
-    Config: Type[PydanticConfigProto]
+class PydanticModelProto(Protocol):
+    def model_dump(self) -> str: ...
+
+    @classmethod
+    def model_validate(
+        cls, value: "PydanticModelProto"
+    ) -> "PydanticModelProto": ...

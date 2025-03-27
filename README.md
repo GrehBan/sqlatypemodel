@@ -33,14 +33,3 @@ with Session(engine) as session:
     session.commit()
 
 ```
-
-## If you do not want use pydantic
-    BUT - it is very simplified and dumb implementation of model
-```python
-...
-from sqlatypemodel import Model
-
-
-class MessageModel(Model):
-    text: str
-```
