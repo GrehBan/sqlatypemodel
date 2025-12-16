@@ -1,6 +1,6 @@
 [project]
 name = "sqlatypemodel"
-version = "0.2.0"
+version = "0.3.0"
 description = ""
 authors = [
     {name = "grehban",email = "maximfeedback19@gmail.com"}
@@ -8,10 +8,13 @@ authors = [
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.13"
+repository = "https://github.com/GrehBan/sqlatypemodel"
+packages = [{ include = "sqlatypemodel" }]
 dependencies = [
     "sqlalchemy (>=2.0.40,<3.0.0)",
     "black (>=25.1.0,<26.0.0)",
     "isort (>=6.0.1,<7.0.0)",
+    "pydantic (>=2.12.5,<3.0.0)"
 ]
 
 [tool.black]
