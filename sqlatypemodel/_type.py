@@ -1,137 +1,138 @@
-from typing import Callable
-
+import inspect
+from typing import Any, Callable, Optional, Generic, Type, TypeVar
 import sqlalchemy as sa
-from sqlalchemy.engine.default import DefaultDialect
-
+from sqlalchemy.engine import Dialect
 from .protocols import PydanticModelProto, T
 
 
-class ModelType(sa.types.TypeDecorator):
+class ModelType(sa.types.TypeDecorator, Generic[T]):
     """
-    A SQLAlchemy custom type decorator for handling JSON serialization and
-    deserialization of Pydantic models or other Python objects.
-    This type allows storing Python objects (e.g., Pydantic models) as JSON
-    in the database and retrieving them back as Python objects.
-    Attributes:
-        impl (Type): The underlying SQLAlchemy type used for storage (JSON).
-        hashable (bool): Indicates whether the type is hashable (default: False).
-        cache_ok (bool): Indicates whether the type is safe for caching (default: True).
-        model (T): The Python object or Pydantic model to be serialized/deserialized.
-        json_dumps (Callable[[T], str] | str | None, optional): A callable or method name
-            for serializing the object to JSON. If the model is a Pydantic model,
-            defaults to `model_dump`.
-        json_loads (Callable[[str], T] | str | None, optional): A callable or method name
-            for deserializing JSON back to the object. If the model is a Pydantic model,
-            defaults to `model_validate`.
-        ValueError: If `json_dumps` or `json_loads` is not provided for non-Pydantic models.
-        TypeError: If `json_dumps` is not callable or a valid method.
-        TypeError: If `json_loads` is not callable or a valid method.
-    Methods:
-        process_bind_param(value: T, dialect: DefaultDialect) -> str:
-            Serializes the Python object to a JSON string for storage in the database.
-        process_result_value(value: str, dialect: DefaultDialect) -> T:
-            Deserializes the JSON string from the database back to the Python object.
-    """
+    SQLAlchemy TypeDecorator for storing Pydantic models as JSON.
 
+    This TypeDecorator serializes a Pydantic model into a JSON-compatible dictionary
+    when writing to the database, and deserializes it back into a Pydantic model
+    when reading from the database.
+
+    Args:
+        model: The Pydantic model class to serialize/deserialize.
+        json_dumps: Optional callable or method name for serialization.
+        json_loads: Optional callable or method name for deserialization.
+    """
     impl = sa.JSON
-
-    hashable = False
     cache_ok = True
 
     def __init__(
         self,
-        model: type[T],
-        json_dumps: Callable[[T], str] | str | None = None,
-        json_loads: Callable[[str], T] | str | None = None,
+        model: Type[T],
+        json_dumps: Optional[Callable[[T], dict[str, Any]] | str] = None,
+        json_loads: Optional[Callable[[dict[str, Any]], T] | str] = None,
         *args,
         **kwargs,
     ):
-        """
-        Initialize a ModelType instance.
-        Args:
-            model (T): The model instance or class to be used.
-            json_dumps (Callable[[T], str] | str | None, optional): A callable or method name for serializing the model
-                to a JSON string. If the model is a Pydantic model and this is not provided, the `model_dump` method
-                will be used by default. Defaults to None.
-            json_loads (Callable[[str], T] | str | None, optional): A callable or method name for deserializing a JSON
-                string back to the model. If the model is a Pydantic model and this is not provided, the `model_validate`
-                method will be used by default. Defaults to None.
-            *args: Additional positional arguments to pass to the superclass initializer.
-            **kwargs: Additional keyword arguments to pass to the superclass initializer.
-        Raises:
-            ValueError: If `json_dumps` or `json_loads` are not provided and the model is not a Pydantic model.
-            TypeError: If `json_dumps` or `json_loads` is not callable or a valid method name.
-        Attributes:
-            model (T): The model instance or class.
-            dumps (Callable[[T], str]): The callable used for serializing the model to a JSON string.
-            loads (Callable[[str], T]): The callable used for deserializing a JSON string back to the model.
-        """
-        super(ModelType, self).__init__(*args, **kwargs)
-
+        super().__init__(*args, **kwargs)
         self.model = model
 
-        if isinstance(model, PydanticModelProto):
-            if json_dumps is None:
-                json_dumps = model.model_dump
-            if json_loads is None:
-                json_loads = model.model_validate
-        elif json_loads is None or json_dumps is None:
+        raw_dumps = None
+        raw_loads = None
+        is_pydantic = False
+
+        try:
+            is_pydantic = issubclass(model, PydanticModelProto)
+        except TypeError:
+            pass
+
+        if is_pydantic and not json_dumps and hasattr(model, "model_dump"):
+            raw_dumps = model.model_dump
+        elif json_dumps:
+            raw_dumps = self._get_callable(json_dumps)
+
+        if is_pydantic and not json_loads and hasattr(model, "model_validate"):
+            raw_loads = model.model_validate
+        elif json_loads:
+            raw_loads = self._get_callable(json_loads)
+
+        if not raw_dumps or not raw_loads:
             raise ValueError(
-                f"json_dumps and json_loads must be provided for the model of type {type(model).__name__}. Ensure that both serialization and deserialization methods are specified."
+                f"Could not resolve serialization methods for {model}. "
+                f"Provide `json_dumps` and `json_loads` explicitly."
             )
 
-        else:
-            if isinstance(json_dumps, str):
-                if not hasattr(self.model, json_dumps):
-                    raise AttributeError(
-                        f"'{type(self.model).__name__}' object has no attribute '{json_dumps}'"
-                    )
+        self.dumps = self._wrap_dumps_if_needed(raw_dumps)
+        self.loads = raw_loads
 
-                json_dumps = getattr(self.model, json_dumps)
-
-            if isinstance(json_loads, str):
-                if not hasattr(self.model, json_loads):
-                    raise AttributeError(
-                        f"The model of type {type(self.model).__name__} does not have a method or attribute named '{json_loads}'."
-                    )
-
-                json_loads = getattr(self.model, json_loads)
-
-        if not callable(json_loads):
-            raise TypeError(
-                f"{json_loads} is not a valid method. Expected a callable, but got {type(json_loads).__name__}."
-            )
-        if not callable(json_dumps):
-            raise TypeError(
-                f"The model of type {type(self.model).__name__} does not have a valid callable for serialization: '{json_dumps}'."
-            )
-
-        self.loads: Callable[[str], T] = json_loads
-        self.dumps: Callable[[T], str] = json_dumps
-
-    def process_bind_param(self, value: T, dialect: DefaultDialect) -> str:
+    def _get_callable(self, method_name: Optional[str | Callable]) -> Callable:
         """
-        Processes the given value before it is bound to a database parameter.
-        This method is typically used to serialize or transform the value into
-        a format suitable for storage in the database.
+        Retrieve a callable from a method name string or return the callable itself.
+
         Args:
-            value (T): The value to be processed and bound to the database parameter.
-            dialect (DefaultDialect): The SQLAlchemy dialect in use, which may
-                influence how the value is processed.
-        Returns:
-            str: The processed value, typically serialized into a string format.
-        """
+            method_name: A callable or the name of a method of the model.
 
+        Returns:
+            A callable object.
+
+        Raises:
+            TypeError: If the argument is not callable or a valid method name.
+        """
+        if callable(method_name):
+            return method_name
+        if isinstance(method_name, str) and hasattr(self.model, method_name):
+            return getattr(self.model, method_name)
+        raise TypeError(
+            f"Expected a callable or a valid method name, got {type(method_name).__name__}."
+        )
+
+    def _wrap_dumps_if_needed(self, func: Callable) -> Callable:
+        """
+        Wrap the serialization function to add 'mode' argument if supported.
+
+        Some Pydantic versions support `mode="json"` in model_dump.
+        This inspects the function signature and wraps it if needed.
+
+        Args:
+            func: The serialization function.
+
+        Returns:
+            A callable that can serialize the model into a JSON-compatible dict.
+        """
+        try:
+            sig = inspect.signature(func)
+            if "mode" in sig.parameters:
+                return lambda x: func(x, mode="json")
+        except (ValueError, TypeError):
+            pass
+        
+        return func
+
+    def process_bind_param(
+        self, value: Optional[T], dialect: Dialect
+    ) -> Optional[dict[str, Any]]:
+        """
+        Convert a Pydantic model to a dictionary for storing in the database.
+
+        Args:
+            value: The Pydantic model instance or None.
+            dialect: The SQLAlchemy database dialect.
+
+        Returns:
+            A JSON-compatible dictionary or None if value is None.
+        """
+        if value is None:
+            return None
         return self.dumps(value)
 
-    def process_result_value(self, value: str, dialect: DefaultDialect) -> T:
+    def process_result_value(
+        self, value: Optional[dict[str, Any]], dialect: Dialect
+    ) -> Optional[T]:
         """
-        Processes the value retrieved from the database and converts it into the desired Python object.
-        Args:
-            value (str): The value retrieved from the database as a string.
-            dialect (DefaultDialect): The SQLAlchemy dialect in use.
-        Returns:
-            T: The converted Python object after applying the `loads` method.
-        """
+        Convert a dictionary from the database back into a Pydantic model.
 
+        Args:
+            value: A JSON-compatible dictionary from the database.
+            dialect: The SQLAlchemy database dialect.
+
+        Returns:
+            A Pydantic model instance or None if value is None.
+        """
+        if value is None:
+            return None
         return self.loads(value)
