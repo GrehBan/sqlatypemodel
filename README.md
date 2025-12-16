@@ -1,8 +1,11 @@
 # SQLAlchemy Model Type
 
-A lightweight, robust tool for using class-based models (such as **Pydantic**) as native data types in **SQLAlchemy**.
+Typed JSON fields for SQLAlchemy **with automatic mutation tracking**.
 
-This library allows you to store complex objects in your database as JSON/JSONB, while interacting with them as fully typed Python objects. It handles serialization, deserialization, and **mutation tracking** automatically.
+SQLAlchemy does not detect in-place changes inside JSON columns.
+This library fixes that, while letting you work with fully typed Python models
+(Pydantic, dataclasses, or custom classes).
+
 
 ## Key Features
 
@@ -10,7 +13,37 @@ This library allows you to store complex objects in your database as JSON/JSONB,
 * **Mutation Tracking:** Built-in `MutableMixin` ensures changes to fields (e.g., `user.config.theme = "dark"`) are automatically detected and saved.
 * **Automatic Serialization:** Converts models to JSON dictionaries when saving.
 * **Automatic Validation:** Validates and converts JSON back into Pydantic models when reading.
-* **JSON Operator Support:** Supports standard SQL JSON operators (e.g., `->`, `->>`) for querying.
+* **JSON Operator Support:** Fully compatible with SQLAlchemy JSON operators
+  (e.g., `->`, `->>`), since data is stored as native JSON/JSONB.
+
+## The Problem
+
+```python
+user.message.text = "Updated"
+session.commit()  # ❌ NOT persisted by default SQLAlchemy
+```
+
+## The Solution
+
+```python
+user.message.text = "Updated"
+session.commit()  # ✅ persisted with sqlatypemodel
+```
+
+## When NOT to use this library
+
+- You need to run complex SQL queries over JSON fields
+- Your data is highly relational and should be normalized
+- You don't need mutation tracking for JSON columns
+
+## Comparison
+
+| Solution | Typed | Mutation Tracking | ORM-agnostic |
+|--------|------|------------------|-------------|
+| Raw JSON | ❌ | ❌ | ✅ |
+| Custom TypeDecorator | ⚠️ | ⚠️ manual | ✅ |
+| SQLModel | ✅ | ❌ | ❌ |
+| **sqlatypemodel** | ✅ | ✅ | ✅ |
 
 
 ## Installation
