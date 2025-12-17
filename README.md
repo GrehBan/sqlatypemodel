@@ -1,5 +1,9 @@
 # sqlatypemodel
 
+[![Tests](https://github.com/GrehBan/sqlatypemodel/actions/workflows/tests.yml/badge.svg)](https://github.com/GrehBan/sqlatypemodel/actions/workflows/tests.yml)
+[![PyPI version](https://badge.fury.io/py/sqlatypemodel.svg)](https://badge.fury.io/py/sqlatypemodel)
+[![Python versions](https://img.shields.io/pypi/pyversions/sqlatypemodel.svg)](https://pypi.org/project/sqlatypemodel/)
+
 **Typed JSON fields for SQLAlchemy with automatic mutation tracking.**
 
 SQLAlchemy does not detect in-place changes inside JSON columns by default. `sqlatypemodel` fixes this, enabling you to work with fully typed Python objects (Pydantic, Dataclasses, Attrs, or custom classes) while ensuring all changes are automatically saved to the database.
