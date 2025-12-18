@@ -14,11 +14,14 @@ Example:
 
 from __future__ import annotations
 
+from typing import Any
+
 __all__ = (
     "SQLATypeModelError",
     "SerializationError",
     "DeserializationError",
 )
+
 
 class SQLATypeModelError(Exception):
     """Base exception for all sqlatypemodel errors.
@@ -43,8 +46,8 @@ class SerializationError(SQLATypeModelError):
     converted to a JSON-compatible dictionary for database storage.
 
     Attributes:
-        model_name: Name of the model class that failed to serialize.
-        original_error: The underlying exception that caused the failure.
+        model_name (str): Name of the model class that failed to serialize.
+        original_error (Exception | None): The underlying exception that caused the failure.
 
     Example:
         >>> raise SerializationError(
@@ -63,6 +66,7 @@ class SerializationError(SQLATypeModelError):
         Args:
             model_name: Name of the model class that failed to serialize.
             original_error: The underlying exception that caused the failure.
+                Defaults to None.
         """
         self.model_name = model_name
         self.original_error = original_error
@@ -79,9 +83,9 @@ class DeserializationError(SQLATypeModelError):
     back into a Pydantic model instance.
 
     Attributes:
-        model_name: Name of the model class that failed to deserialize.
-        data: The raw database data that could not be deserialized.
-        original_error: The underlying exception that caused the failure.
+        model_name (str): Name of the model class that failed to deserialize.
+        data (dict[str, Any] | None): The raw database data that could not be deserialized.
+        original_error (Exception | None): The underlying exception that caused the failure.
 
     Example:
         >>> raise DeserializationError(
@@ -94,7 +98,7 @@ class DeserializationError(SQLATypeModelError):
     def __init__(
         self,
         model_name: str,
-        data: dict | None = None,
+        data: dict[str, Any] | None = None,
         original_error: Exception | None = None,
     ) -> None:
         """Initialize DeserializationError.
@@ -102,7 +106,9 @@ class DeserializationError(SQLATypeModelError):
         Args:
             model_name: Name of the model class that failed to deserialize.
             data: The raw database data that could not be deserialized.
+                Defaults to None.
             original_error: The underlying exception that caused the failure.
+                Defaults to None.
         """
         self.model_name = model_name
         self.data = data

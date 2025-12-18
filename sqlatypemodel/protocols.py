@@ -6,17 +6,17 @@ actual Pydantic BaseModel subclasses.
 
 Example:
     >>> from sqlatypemodel.protocols import PydanticModelProtocol
-    >>> 
+    >>>
     >>> class CustomModel:
     ...     def model_dump(self, mode: str = "python") -> dict:
     ...         return {"field": self.field}
-    ...     
+    ...
     ...     @classmethod
     ...     def model_validate(cls, obj):
     ...         instance = cls()
     ...         instance.field = obj["field"]
     ...         return instance
-    >>> 
+    >>>
     >>> # CustomModel now conforms to PydanticModelProtocol
     >>> isinstance(CustomModel(), PydanticModelProtocol)
     True
@@ -48,11 +48,11 @@ class PydanticModelProtocol(Protocol):
 
     Example:
         >>> from pydantic import BaseModel
-        >>> 
+        >>>
         >>> class Config(BaseModel):
         ...     theme: str
         ...     debug: bool = False
-        >>> 
+        >>>
         >>> # Pydantic models automatically conform
         >>> isinstance(Config(theme="dark"), PydanticModelProtocol)
         True
@@ -78,7 +78,7 @@ class PydanticModelProtocol(Protocol):
         ...
 
     @classmethod
-    def model_validate(cls, obj: Any) -> "PydanticModelProtocol":
+    def model_validate(cls, obj: Any) -> PydanticModelProtocol:
         """Create a model instance from input data.
 
         This class method validates and converts input data (typically

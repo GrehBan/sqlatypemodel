@@ -57,4 +57,9 @@ __all__ = (
     "DeserializationError",
 )
 
-__version__ = "1.0.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("sqlatypemodel")
+except PackageNotFoundError:
+    __version__ = "0.4.0"

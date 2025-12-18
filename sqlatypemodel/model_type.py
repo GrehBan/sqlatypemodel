@@ -1,31 +1,11 @@
-"""SQLAlchemy TypeDecorator for storing Pydantic models as JSON.
-
-This module provides the ModelType class, which enables transparent
-serialization and deserialization of Pydantic models to and from
-SQLAlchemy JSON columns.
-
-Example:
-    >>> from pydantic import BaseModel
-    >>> from sqlalchemy import Column
-    >>> from sqlalchemy.orm import Mapped, mapped_column
-    >>> from sqlatypemodel import ModelType, MutableMixin
-    >>> 
-    >>> class Settings(MutableMixin, BaseModel):
-    ...     theme: str
-    ...     notifications: bool = True
-    >>> 
-    >>> class User(Base):
-    ...     __tablename__ = "users"
-    ...     id: Mapped[int] = mapped_column(primary_key=True)
-    ...     settings: Mapped[Settings] = mapped_column(
-    ...         Settings.as_mutable(ModelType(Settings))
-    ...     )
-"""
+"""SQLAlchemy TypeDecorator for storing Pydantic models as JSON."""
 
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
+import logging
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Dialect
@@ -36,56 +16,25 @@ from .protocols import PT, PydanticModelProtocol
 if TYPE_CHECKING:
     from .mixin import MutableMixin
 
-__all__ = (
-    "ModelType",
-)
+__all__ = ("ModelType",)
 
 _T = TypeVar("_T")
+logger = logging.getLogger(__name__)
 
 
-class ModelType(sa.types.TypeDecorator, Generic[PT]):
+class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
     """SQLAlchemy TypeDecorator for storing Pydantic models as JSON.
 
-    This TypeDecorator handles:
-    - Serialization: Pydantic model -> JSON dict (on write)
-    - Deserialization: JSON dict -> Pydantic model (on read)
+    This custom type handles the serialization of Pydantic models (or any class
+    conforming to PydanticModelProtocol) into JSON for database storage,
+    and deserialization back into Python objects upon retrieval.
 
-    Supports both Pydantic BaseModel subclasses and any class that
-    implements the PydanticModelProtocol interface.
+    It also integrates with `MutableMixin` to ensure that nested changes
+    within the JSON structure are tracked and persisted.
 
     Attributes:
-        impl: The underlying SQLAlchemy type (JSON).
-        cache_ok: Whether the type is safe to cache (True).
-        model: The Pydantic model class being serialized.
-        dumps: The serialization callable.
-        loads: The deserialization callable.
-
-    Args:
-        model: The Pydantic model class to serialize/deserialize.
-        json_dumps: Optional custom serialization callable.
-                   Defaults to model.model_dump(mode='json') for Pydantic models.
-        json_loads: Optional custom deserialization callable.
-                   Defaults to model.model_validate() for Pydantic models.
-
-    Example:
-        >>> # Automatic serialization for Pydantic models
-        >>> class Config(BaseModel):
-        ...     theme: str
-        ...     debug: bool = False
-        >>> 
-        >>> config_column = mapped_column(ModelType(Config))
-        >>> 
-        >>> # Custom serialization for non-Pydantic classes
-        >>> class CustomData:
-        ...     def to_dict(self) -> dict: ...
-        ...     @classmethod
-        ...     def from_dict(cls, data: dict) -> 'CustomData': ...
-        >>> 
-        >>> custom_column = mapped_column(ModelType(
-        ...     CustomData,
-        ...     json_dumps=lambda x: x.to_dict(),
-        ...     json_loads=CustomData.from_dict
-        ... ))
+        impl (Any): The underlying SQLAlchemy implementation type (JSON).
+        cache_ok (bool): Indicates that this type is safe to cache.
     """
 
     impl = sa.JSON
@@ -99,18 +48,21 @@ class ModelType(sa.types.TypeDecorator, Generic[PT]):
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        """Initialize the ModelType decorator.
+        """Initialize the ModelType.
 
         Args:
-            model: The Pydantic model class to serialize/deserialize.
-            json_dumps: Optional custom serialization callable.
-            json_loads: Optional custom deserialization callable.
-            *args: Additional positional arguments for TypeDecorator.
-            **kwargs: Additional keyword arguments for TypeDecorator.
+            model: The Pydantic model class (or protocol-compatible class)
+                to be stored in this column.
+            json_dumps: Optional custom function to serialize the model
+                to a dict/JSON. If None, uses `model.model_dump(mode='json')`.
+            json_loads: Optional custom function to deserialize a dict/JSON
+                to the model. If None, uses `model.model_validate()`.
+            *args: Positional arguments passed to `sa.types.TypeDecorator`.
+            **kwargs: Keyword arguments passed to `sa.types.TypeDecorator`.
 
         Raises:
-            ValueError: If serialization/deserialization methods cannot
-                       be resolved for non-Pydantic models.
+            ValueError: If the provided `model` class does not implement the
+                Pydantic protocol and no custom serializers are provided.
         """
         super().__init__(*args, **kwargs)
         self.model = model
@@ -130,7 +82,10 @@ class ModelType(sa.types.TypeDecorator, Generic[PT]):
         if json_loads is not None:
             self.loads = json_loads
         elif is_pydantic:
-            self.loads = model.model_validate  # type: ignore[attr-defined]
+            # FIX: Removed unused type: ignore, as cast() handles it correctly
+            self.loads = cast(
+                Callable[[dict[str, Any]], PT], model.model_validate
+            )
         else:
             raise ValueError(
                 f"Cannot resolve deserialization for {model.__name__}. "
@@ -138,28 +93,27 @@ class ModelType(sa.types.TypeDecorator, Generic[PT]):
             )
 
     def _create_pydantic_dumps(self) -> Callable[[PT], dict[str, Any]]:
-        """Create a serialization function for Pydantic models.
+        """Create a default serialization function for Pydantic models.
 
         Returns:
-            A callable that serializes a Pydantic model to a JSON dict.
+            A callable that takes a model instance and returns a dict.
         """
+
         def dumps(obj: PT) -> dict[str, Any]:
-            return obj.model_dump(mode="json")  # type: ignore[attr-defined]
+            return obj.model_dump(mode="json")
+
         return dumps
 
     @staticmethod
     def _is_pydantic_compatible(model: type) -> bool:
-        """Check if a model class is Pydantic-compatible.
-
-        A model is Pydantic-compatible if it:
-        1. Is an instance of PydanticModelProtocol, or
-        2. Has callable model_dump and model_validate methods.
+        """Check if a class adheres to the PydanticModelProtocol.
 
         Args:
-            model: The model class to check.
+            model: The class to check.
 
         Returns:
-            True if the model is Pydantic-compatible, False otherwise.
+            True if the class implements `model_dump` and `model_validate`,
+            False otherwise.
         """
         try:
             if issubclass(model, PydanticModelProtocol):
@@ -176,21 +130,22 @@ class ModelType(sa.types.TypeDecorator, Generic[PT]):
     def register_mutable(cls, mutable: type[MutableMixin]) -> None:
         """Register a MutableMixin subclass with this ModelType.
 
-        This method associates a mutable class with the ModelType,
-        enabling automatic change tracking.
+        This method links a specific MutableMixin implementation (like the
+        one used on the model) with this TypeDecorator, enabling automatic
+        change tracking.
 
         Args:
-            mutable: A MutableMixin subclass to register.
+            mutable: The MutableMixin subclass to register.
 
         Raises:
-            TypeError: If mutable is not a class or not a MutableMixin subclass.
+            TypeError: If the argument is not a subclass of MutableMixin.
         """
         from .mixin import MutableMixin
 
-        if not inspect.isclass(mutable) or not issubclass(mutable, MutableMixin):
-            raise TypeError(
-                "mutable must be a class that inherits from MutableMixin"
-            )
+        if not inspect.isclass(mutable) or not issubclass(
+            mutable, MutableMixin
+        ):
+            raise TypeError("mutable must be a subclass of MutableMixin")
         mutable.associate_with(cls)
 
     def process_bind_param(
@@ -198,16 +153,14 @@ class ModelType(sa.types.TypeDecorator, Generic[PT]):
         value: PT | None,
         dialect: Dialect,
     ) -> dict[str, Any] | None:
-        """Serialize a Pydantic model for database storage.
-
-        This method is called by SQLAlchemy when writing to the database.
+        """Serialize the Python object for storage in the database.
 
         Args:
-            value: The Pydantic model instance to serialize, or None.
-            dialect: The SQLAlchemy dialect being used.
+            value: The Python object (Pydantic model) to serialize.
+            dialect: The database dialect in use.
 
         Returns:
-            A JSON-compatible dictionary, or None if value is None.
+            A dictionary representation of the object, or None.
 
         Raises:
             SerializationError: If serialization fails.
@@ -218,6 +171,12 @@ class ModelType(sa.types.TypeDecorator, Generic[PT]):
         try:
             return self.dumps(value)
         except Exception as e:
+            logger.error(
+                "Serialization failed for model %s: %s",
+                self.model.__name__,
+                e,
+                exc_info=True,
+            )
             raise SerializationError(self.model.__name__, e) from e
 
     def process_result_value(
@@ -225,24 +184,37 @@ class ModelType(sa.types.TypeDecorator, Generic[PT]):
         value: dict[str, Any] | None,
         dialect: Dialect,
     ) -> PT | None:
-        """Deserialize database JSON into a Pydantic model.
+        """Deserialize the database value into a Python object.
 
-        This method is called by SQLAlchemy when reading from the database.
+        This method also triggers the `_scan_and_wrap_fields` hook on the
+        deserialized object to ensure that any nested mutable structures
+        are immediately tracked for changes.
 
         Args:
-            value: The JSON dictionary from the database, or None.
-            dialect: The SQLAlchemy dialect being used.
+            value: The JSON/Dict value from the database.
+            dialect: The database dialect in use.
 
         Returns:
-            A Pydantic model instance, or None if value is None.
+            The instantiated Pydantic model (or compatible object), or None.
 
         Raises:
             DeserializationError: If deserialization fails.
         """
         if value is None:
             return None
-
         try:
-            return self.loads(value)
+            result = self.loads(value)
+
+            if hasattr(result, "_scan_and_wrap_fields") and callable(
+                result._scan_and_wrap_fields
+            ):
+                result._scan_and_wrap_fields()
+            return result
         except Exception as e:
+            logger.error(
+                "Deserialization failed for model %s: %s",
+                self.model.__name__,
+                e,
+                exc_info=True,
+            )
             raise DeserializationError(self.model.__name__, value, e) from e
