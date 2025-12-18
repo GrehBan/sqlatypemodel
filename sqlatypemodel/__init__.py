@@ -38,11 +38,9 @@ Example:
 
 from __future__ import annotations
 
-from .exceptions import (
-    DeserializationError,
-    SerializationError,
-    SQLATypeModelError,
-)
+from . import sqlalchemy_utils, exceptions
+
+
 from .mixin import MutableMixin
 from .model_type import ModelType
 from .protocols import PT, PydanticModelProtocol
@@ -52,9 +50,8 @@ __all__ = (
     "MutableMixin",
     "PydanticModelProtocol",
     "PT",
-    "SQLATypeModelError",
-    "SerializationError",
-    "DeserializationError",
+    "sqlalchemy_utils",
+    "exceptions",
 )
 
 from importlib.metadata import PackageNotFoundError, version

@@ -45,6 +45,7 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
         model: type[PT],
         json_dumps: Callable[[PT], dict[str, Any]] | None = None,
         json_loads: Callable[[dict[str, Any]], PT] | None = None,
+        native_json: bool = False,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -57,6 +58,7 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
                 to a dict/JSON. If None, uses `model.model_dump(mode='json')`.
             json_loads: Optional custom function to deserialize a dict/JSON
                 to the model. If None, uses `model.model_validate()`.
+            native_json: If True, use `model.model_dump_json()` for serialization.
             *args: Positional arguments passed to `sa.types.TypeDecorator`.
             **kwargs: Keyword arguments passed to `sa.types.TypeDecorator`.
 
@@ -67,12 +69,12 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
         super().__init__(*args, **kwargs)
         self.model = model
 
-        is_pydantic = self._is_pydantic_compatible(model)
+        is_pydantic = self._is_pydantic_compatible(model,)
 
         if json_dumps is not None:
             self.dumps = json_dumps
         elif is_pydantic:
-            self.dumps = self._create_pydantic_dumps()
+            self.dumps = self._create_pydantic_dumps(native_json=native_json)
         else:
             raise ValueError(
                 f"Cannot resolve serialization for {model.__name__}. "
@@ -82,7 +84,6 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
         if json_loads is not None:
             self.loads = json_loads
         elif is_pydantic:
-            # FIX: Removed unused type: ignore, as cast() handles it correctly
             self.loads = cast(
                 Callable[[dict[str, Any]], PT], model.model_validate
             )
@@ -92,14 +93,18 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
                 f"Inherit from Pydantic BaseModel or provide 'json_loads'."
             )
 
-    def _create_pydantic_dumps(self) -> Callable[[PT], dict[str, Any]]:
+    def _create_pydantic_dumps(self, native_json: bool = False) -> Callable[[PT], dict[str, Any]]:
         """Create a default serialization function for Pydantic models.
-
+        Args:
+            native_json: If True, use `model_dump_json()` for serialization.
         Returns:
             A callable that takes a model instance and returns a dict.
         """
-
         def dumps(obj: PT) -> dict[str, Any]:
+            if native_json and hasattr(obj, "model_dump_json") and callable(
+                obj.model_dump_json
+            ):
+                return cast(Callable[[], dict[str, Any]], obj.model_dump_json)()
             return obj.model_dump(mode="json")
 
         return dumps

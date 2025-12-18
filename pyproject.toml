@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "sqlatypemodel"
-version = "0.5.0"
+version = "0.5.1rc1"
 description = "Typed JSON fields for SQLAlchemy with automatic mutation tracking"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,11 +25,13 @@ classifiers = [
     "Framework :: Pydantic :: 2",
     "Typing :: Typed",
 ]
-# --- ИСПРАВЛЕНИЕ: dependencies перенесены сюда, внутрь [project] ---
 dependencies = [
     "sqlalchemy>=2.0.0,<3.0.0",
     "pydantic>=2.0.0,<3.0.0",
 ]
+
+[project.optional-dependencies]
+fast = ["orjson>=3.9.0"]
 
 [project.urls]
 Homepage = "https://github.com/GrehBan/sqlatypemodel/"
@@ -47,6 +49,8 @@ ruff = "^0.1.0"
 mypy = ">=1.19.1,<2.0.0"
 pytest = "^8.0.0"
 pytest-cov = "^5.0.0" 
+hypothesis = "^6.148.7"
+attrs = "^25.4.0"
 
 [tool.ruff]
 line-length = 79

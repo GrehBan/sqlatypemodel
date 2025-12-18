@@ -60,7 +60,6 @@ def safe_changed(self: Any, max_failures: int = 10) -> None:
         max_failures: The maximum number of notification failures allowed
             before stopping propagation. Defaults to 10.
     """
-    # 1. Propagate to MutableMixin parents
     try:
         parents_snapshot = tuple(self._parents.items())
     except (RuntimeError, AttributeError):
