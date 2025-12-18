@@ -1,7 +1,7 @@
 """Tests for custom exceptions."""
 import pytest
 
-from sqlatypemodel import (
+from sqlatypemodel.exceptions import (
     DeserializationError,
     SerializationError,
     SQLATypeModelError,

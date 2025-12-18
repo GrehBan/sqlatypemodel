@@ -36,4 +36,4 @@ jobs:
 
     - name: Run Forensic Stress Test
       run: |
-        poetry run python tests/stress_test.py
+        poetry run python tests/test_stress.py

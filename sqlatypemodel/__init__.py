@@ -4,11 +4,6 @@ This package provides tools for storing Pydantic models in SQLAlchemy
 JSON columns with automatic serialization, deserialization, and
 mutation tracking.
 
-Main Components:
-    - ModelType: TypeDecorator for JSON serialization of Pydantic models
-    - MutableMixin: Mixin for automatic change tracking
-    - PydanticModelProtocol: Protocol for Pydantic-compatible classes
-
 Example:
     >>> from pydantic import BaseModel
     >>> from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -25,17 +20,18 @@ Example:
     >>> class User(Base):
     ...     __tablename__ = "users"
     ...     id: Mapped[int] = mapped_column(primary_key=True)
+    ...     
+    ...     # MutableMixin automatically registers with ModelType via __init_subclass__
     ...     settings: Mapped[UserSettings] = mapped_column(
-    ...         UserSettings.as_mutable(ModelType(UserSettings)),
-    ...         default=UserSettings
+    ...         ModelType(UserSettings)
     ...     )
     >>> 
     >>> # Usage
-    >>> user = User()
+    >>> user = User(settings=UserSettings())
     >>> user.settings.theme = "dark"  # Automatically tracked!
     >>> user.settings.tags.append("premium")  # Also tracked!
-"""
 
+"""
 from __future__ import annotations
 
 from . import sqlalchemy_utils, exceptions

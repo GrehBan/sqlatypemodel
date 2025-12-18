@@ -29,6 +29,9 @@ dependencies = [
     "sqlalchemy>=2.0.0,<3.0.0",
     "pydantic>=2.0.0,<3.0.0",
 ]
+packages = [
+    { include = "sqlatypemodel"}
+]
 
 [project.optional-dependencies]
 fast = ["orjson>=3.9.0"]
@@ -37,11 +40,6 @@ fast = ["orjson>=3.9.0"]
 Homepage = "https://github.com/GrehBan/sqlatypemodel/"
 Documentation = "https://github.com/GrehBan/sqlatypemodel/"
 Repository = "https://github.com/GrehBan/sqlatypemodel/"
-
-[tool.poetry]
-packages = [
-    { include = "sqlatypemodel"}
-]
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.0.0"

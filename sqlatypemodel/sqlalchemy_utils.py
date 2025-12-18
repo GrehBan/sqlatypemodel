@@ -1,7 +1,7 @@
 from typing import Any
 
 from sqlalchemy import create_engine, Engine
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
+from sqlalchemy.ext.asyncio import create_async_engine as _create_async_engine, AsyncEngine
 
 from .serializer import get_serializers
 
@@ -37,4 +37,4 @@ async def create_async_engine(*args: Any, **kwargs: Any) -> AsyncEngine:
     dumps, loads = get_serializers()
     kwargs.setdefault("json_serializer", dumps)
     kwargs.setdefault("json_deserializer", loads)
-    return await create_async_engine(*args, **kwargs)
+    return await _create_async_engine(*args, **kwargs)

@@ -8,10 +8,7 @@ import resource
 import dataclasses
 from datetime import datetime
 from contextlib import contextmanager
-from typing import List, Dict, Set, Any, Optional, Iterator
-from decimal import Decimal
-import uuid
-import enum
+from typing import List, Dict, Set, Any, Optional, Iterator, cast
 
 import pytest
 from hypothesis import strategies as st, settings, HealthCheck, given, note
@@ -76,7 +73,7 @@ class ForensicLogger:
 TRACE = ForensicLogger()
 
 @pytest.fixture(scope="session", autouse=True)
-def cleanup_logger():
+def cleanup_logger() -> Iterator[None]:
     yield
     TRACE.close()
 
@@ -100,7 +97,9 @@ def step(name: str) -> Iterator[None]:
 
 def attach_sql_sniffer(engine: Any) -> None:
     @event.listens_for(engine, "before_cursor_execute")
-    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    def before_cursor_execute(
+        conn: Any, cursor: Any, statement: Any, parameters: Any, context: Any, executemany: Any
+    ) -> None:
         conn.info.setdefault('query_start_time', []).append(time.perf_counter_ns())
         params_str = str(parameters)
         if len(params_str) > 200:
@@ -108,7 +107,9 @@ def attach_sql_sniffer(engine: Any) -> None:
         TRACE.log("SQL_REQ", f"Exec: {statement} | Params: {params_str}")
 
     @event.listens_for(engine, "after_cursor_execute")
-    def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    def after_cursor_execute(
+        conn: Any, cursor: Any, statement: Any, parameters: Any, context: Any, executemany: Any
+    ) -> None:
         try:
             start_list = conn.info.get('query_start_time', [])
             if start_list:
@@ -122,12 +123,6 @@ def attach_sql_sniffer(engine: Any) -> None:
 # 3. DATA MODELS (PYDANTIC, DATACLASS, CUSTOM, ATTRS)
 # =============================================================================
 
-class StatusEnum(str, enum.Enum):
-    ACTIVE = "active"
-    ARCHIVED = "archived"
-    DELETED = "deleted"
-
-# --- 1. PYDANTIC ---
 class ListWrapper(MutableMixin, BaseModel):
     items: List[int] = Field(default_factory=list)
 
@@ -147,8 +142,7 @@ class CompatibleDataclass(MutableMixin):
     label: str
     active: bool = True
 
-    # Реализация протокола для сериализации
-    def model_dump(self, mode="python") -> dict:
+    def model_dump(self, mode: str = "python") -> dict[str, Any]:
         return dataclasses.asdict(self)
 
     @classmethod
@@ -159,14 +153,14 @@ class CompatibleDataclass(MutableMixin):
 # --- 3. CUSTOM VANILLA CLASS ---
 class VanillaClass(MutableMixin):
     """Обычный класс Python"""
-    def __init__(self, raw_data: str, counter: int):
+    def __init__(self, raw_data: str, counter: int) -> None:
         self.raw_data = raw_data
         self.counter = counter
     
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         return isinstance(other, VanillaClass) and self.__dict__ == other.__dict__
 
-    def model_dump(self, mode="python") -> dict:
+    def model_dump(self, mode: str = "python") -> dict[str, Any]:
         return {"raw_data": self.raw_data, "counter": self.counter}
 
     @classmethod
@@ -174,7 +168,7 @@ class VanillaClass(MutableMixin):
         if isinstance(obj, cls): return obj
         return cls(raw_data=obj["raw_data"], counter=obj["counter"])
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"VanillaClass(raw_data={self.raw_data}, counter={self.counter})"
 
 # --- 4. ATTRS (Conditional) ---
@@ -184,7 +178,7 @@ if HAS_ATTRS:
         title: str
         score: float
         
-        def model_dump(self, mode="python") -> dict:
+        def model_dump(self, mode: str = "python") -> dict[str, Any]:
             return attrs.asdict(self)
 
         @classmethod
@@ -222,7 +216,7 @@ class StressEntity(Base):
 MIN_INT64 = -2**63
 MAX_INT64 = 2**63 - 1
 
-def node_strategy(max_leaves=25):
+def node_strategy(max_leaves: int = 25) -> st.SearchStrategy[Node]:
     return st.recursive(
         st.builds(Node, name=st.text(min_size=1), value=st.integers(MIN_INT64, MAX_INT64), 
                   children=st.lists(st.nothing(), max_size=0), tags=st.sets(st.text()), meta=st.dictionaries(st.text(), st.text())),
@@ -234,6 +228,9 @@ def node_strategy(max_leaves=25):
 dataclass_strategy = st.builds(CompatibleDataclass, pk=st.integers(MIN_INT64, MAX_INT64), label=st.text(), active=st.booleans())
 vanilla_strategy = st.builds(VanillaClass, raw_data=st.text(), counter=st.integers(MIN_INT64, MAX_INT64))
 
+# Аннотация Any нужна, чтобы mypy не ругался на несовместимые типы в ветках if/else
+attrs_strategy: st.SearchStrategy[Any] 
+
 if HAS_ATTRS:
     attrs_strategy = st.builds(CompatibleAttrs, title=st.text(), score=st.floats(allow_nan=False, allow_infinity=False))
 else:
@@ -244,7 +241,7 @@ else:
 # =============================================================================
 
 class DBStateMachine(RuleBasedStateMachine):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.temp_dir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.temp_dir, "test.db")
@@ -256,7 +253,7 @@ class DBStateMachine(RuleBasedStateMachine):
         self.Session = sessionmaker(bind=self.engine)
         self.session = self.Session()
 
-    def teardown(self):
+    def teardown(self) -> None:
         TRACE.log("STATE", "Teardown DBStateMachine")
         self.session.close()
         Base.metadata.drop_all(self.engine)
@@ -271,10 +268,11 @@ class DBStateMachine(RuleBasedStateMachine):
           dc=st.one_of(st.none(), dataclass_strategy),
           vanilla=st.one_of(st.none(), vanilla_strategy),
           attrs_obj=st.one_of(st.none(), attrs_strategy) if HAS_ATTRS else st.none())
-    def create_entity(self, name, tree, dc, vanilla, attrs_obj):
+    def create_entity(self, name: str, tree: Node, dc: Optional[CompatibleDataclass], 
+                      vanilla: Optional[VanillaClass], attrs_obj: Any) -> StressEntity:
         """Создание сущности со смесью Pydantic, Dataclass, Custom и Attrs"""
         with step(f"Rule: Create Mixed Entity '{name[:5]}...'"):
-            kw = {
+            kw: Dict[str, Any] = {
                 "name": name, 
                 "tree_data": tree, 
                 "dc_data": dc, 
@@ -289,28 +287,29 @@ class DBStateMachine(RuleBasedStateMachine):
             return entity
 
     @rule(entity=entities, inc=st.integers(1, 10))
-    def mutate_dataclass(self, entity, inc):
+    def mutate_dataclass(self, entity: StressEntity, inc: int) -> None:
         """Проверка отслеживания изменений в Dataclass"""
         if entity.dc_data is None:
-            return # Skip if None
+            return 
             
         with step(f"Rule: Mutate Dataclass ID={entity.id}"):
             self.session.add(entity)
             old_pk = entity.dc_data.pk
             
-            # Меняем поле датакласса
             TRACE.log("MUTATE", f"Dataclass.pk {old_pk} += {inc}")
             entity.dc_data.pk += inc
             
-            # MutableMixin должен заметить это, даже если это dataclass
             assert self.session.dirty, "Session not dirty after dataclass mutation!"
             self.session.commit()
             
             self.session.expire(entity)
+            # Mypy не знает, что после перезагрузки поле не None, если мы знаем логику
+            # Но для строгости лучше проверить
+            assert entity.dc_data is not None
             assert entity.dc_data.pk == old_pk + inc
 
     @rule(entity=entities, suffix=st.text(min_size=1))
-    def mutate_vanilla(self, entity, suffix):
+    def mutate_vanilla(self, entity: StressEntity, suffix: str) -> None:
         """Проверка отслеживания изменений в обычном классе"""
         if entity.vanilla_data is None:
             return
@@ -324,11 +323,12 @@ class DBStateMachine(RuleBasedStateMachine):
             self.session.commit()
             
             self.session.expire(entity)
+            assert entity.vanilla_data is not None
             assert entity.vanilla_data.raw_data.endswith(suffix)
 
     if HAS_ATTRS:
         @rule(entity=entities, new_score=st.floats(0, 100))
-        def mutate_attrs(self, entity, new_score):
+        def mutate_attrs(self, entity: StressEntity, new_score: float) -> None:
             """Проверка отслеживания изменений в Attrs"""
             if entity.attrs_data is None:
                 return
@@ -336,25 +336,27 @@ class DBStateMachine(RuleBasedStateMachine):
             with step(f"Rule: Mutate Attrs ID={entity.id}"):
                 self.session.add(entity)
                 
+                # --- FIX FOR HYPOTHESIS COLLISIONS ---
                 if entity.attrs_data.score == new_score:
-                    new_score += 1.0
-                # --- FIX END ---
-
-                TRACE.log("MUTATE", f"Attrs score {entity.attrs_data.score} -> {new_score}")
+                     new_score += 1.0
+                
+                TRACE.log("MUTATE", f"Attrs score -> {new_score}")
                 entity.attrs_data.score = new_score
                 
-                assert self.session.dirty, "Attrs mutation failed to flag session dirty"
+                assert self.session.dirty
                 self.session.commit()
                 
                 self.session.expire(entity)
-                # Float compare with tolerance
+                assert entity.attrs_data is not None
                 assert abs(entity.attrs_data.score - new_score) < 0.0001
+
+
 # =============================================================================
 # 6. ZONES
 # =============================================================================
 
 @pytest.fixture
-def session():
+def session() -> Iterator[Session]:
     TRACE.log("SETUP", "Creating :memory: session with StaticPool")
     engine = create_engine("sqlite:///:memory:", poolclass=StaticPool, connect_args={"check_same_thread": False})
     attach_sql_sniffer(engine)
@@ -367,7 +369,7 @@ def session():
 
 @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(dc=dataclass_strategy)
-def test_dataclass_roundtrip(session, dc):
+def test_dataclass_roundtrip(session: Session, dc: CompatibleDataclass) -> None:
     """Отдельный тест чисто для датаклассов"""
     session.rollback()
     entity = StressEntity(name="DC_Test", dc_data=dc, tree_data=Node(name="r"), vanilla_data=None)
@@ -376,6 +378,7 @@ def test_dataclass_roundtrip(session, dc):
     
     session.expire_all()
     loaded = session.scalars(select(StressEntity).where(StressEntity.id == entity.id)).first()
+    assert loaded is not None
     assert loaded.dc_data == dc
 
 # Запуск State Machine
