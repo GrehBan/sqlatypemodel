@@ -1,14 +1,14 @@
 from typing import Any
 
-from sqlalchemy import create_engine, Engine
-from sqlalchemy.ext.asyncio import create_async_engine as _create_async_engine, AsyncEngine
+from sqlalchemy import create_engine as sa_create_engine, Engine
+from sqlalchemy.ext.asyncio import create_async_engine as sa_create_async_engine, AsyncEngine
 
 from .serializer import get_serializers
 
-__all__ = ("create_sync_engine", "create_async_engine")
+__all__ = ("create_engine", "create_async_engine")
 
 
-def create_sync_engine(*args: Any, **kwargs: Any) -> Engine:
+def create_engine(*args: Any, **kwargs: Any) -> Engine:
     """Create a synchronous SQLAlchemy engine with orjson serializers.
 
     Args:
@@ -21,10 +21,10 @@ def create_sync_engine(*args: Any, **kwargs: Any) -> Engine:
     dumps, loads = get_serializers()
     kwargs.setdefault("json_serializer", dumps)
     kwargs.setdefault("json_deserializer", loads)
-    return create_engine(*args, **kwargs)
+    return sa_create_engine(*args, **kwargs)
 
 
-async def create_async_engine(*args: Any, **kwargs: Any) -> AsyncEngine:
+def create_async_engine(*args: Any, **kwargs: Any) -> AsyncEngine:
     """Create an asynchronous SQLAlchemy engine with orjson serializers.
 
     Args:
@@ -37,4 +37,4 @@ async def create_async_engine(*args: Any, **kwargs: Any) -> AsyncEngine:
     dumps, loads = get_serializers()
     kwargs.setdefault("json_serializer", dumps)
     kwargs.setdefault("json_deserializer", loads)
-    return await _create_async_engine(*args, **kwargs)
+    return sa_create_async_engine(*args, **kwargs)

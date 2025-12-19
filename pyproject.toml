@@ -123,6 +123,10 @@ filterwarnings = [
     "ignore::pytest.PytestUnraisableExceptionWarning",
     "ignore::DeprecationWarning:sqlalchemy.*",
 ]
+markers = [
+    "integration: marks tests as integration tests (slow)",
+    "benchmark: marks tests as performance benchmarks",
+]
 
 [tool.black]
 line-length = 79

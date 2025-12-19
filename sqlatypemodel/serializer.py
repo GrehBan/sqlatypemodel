@@ -14,7 +14,7 @@ except ImportError:
 
 def get_serializers(
     use_orjson: bool = True,
-) -> tuple[Callable[[Any], str], Callable[[str], Any]]:
+) -> tuple[Callable[[Any], str], Callable[[str | bytes], Any]]:
     """
     Get the fastest available JSON serialization/deserialization pair.
     
@@ -23,7 +23,6 @@ def get_serializers(
                     Has no effect if orjson is not installed.
     """
     if use_orjson and HAS_ORJSON:
-        # --- ORJSON (Rust) ---
         
         def fast_dumps(obj: Any) -> str:
             return orjson.dumps(obj).decode("utf-8")

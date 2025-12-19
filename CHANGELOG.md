@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-12-19
+
+A major feature release introducing full **Pickle support** (enabling Caching/Celery workflows), correcting critical identity hashing logic, and fully aligning with SQLAlchemy 2.0 patterns.
+
+### Added
+- **Pickle Support**: Implemented robust `__getstate__` and `__setstate__` methods in `MutableMixin`.
+    - Handles **Pydantic V2** nested state structures (`__dict__` inside state).
+    - Automatically cleans up unpicklable `WeakKeyDictionary` (`_parents`).
+    - **Self-Healing**: Automatically triggers `_scan_and_wrap_fields()` after unpickling to restore parent-child tracking relationships, preventing "orphaned" nested objects.
+- **Identity Integrity**: Added a `__new__` hook in `MutableMixin` to forcibly restore `__hash__ = object.__hash__`. This ensures compatibility with `@dataclass` and `@attrs` (which typically strip hashing from mutable objects), preventing `TypeError: unhashable type` when used in tracking dictionaries.
+- **Testing**: Added `tests/conftest.py` with centralized fixtures (`session`, `engine`) and refactored the entire test suite to native **Pytest** patterns, removing legacy `unittest` dependencies.
+
+### Changed
+- **Hashing Logic**: `MutableMixin` now strictly enforces **Identity-based hashing**. This guarantees that modifying a field (e.g., `user.name = "new"`) does not change the object's hash, which is critical for maintaining stable references in `_parents`.
+- **Test Suite**:
+    - **Performance**: Adjusted overhead thresholds (to 500x) to realistically reflect the cost of recursive Python-based wrapping versus C-based Pydantic assignment.
+    - **Fuzzing**: Constrained Hypothesis strategies in `test_stress.py` to generate strictly **64-bit signed integers**, aligning with `orjson` and SQLite limits.
+
+### Fixed
+- **Serialization**: Fixed `_pickle.PicklingError` when using local classes in tests by moving test models to the global scope.
+- **SQLAlchemy 2.0**: Fixed `InvalidRequestError` in integration tests by ensuring models inherit from a subclass of `DeclarativeBase`, not `DeclarativeBase` directly.
+- **Integration**: Resolved `DetachedInstanceError` in Pickle workflows by ensuring attributes are eager-loaded before `session.expunge()`.
+- **Pydantic V2**: Fixed a regression where `__getstate__` failed to clean up `_parents` hidden inside Pydantic's nested `__dict__` state structure.
+
 ## [0.5.1] - 2025-12-18
 
 A release focused on rigorous testing, cross-database compatibility, and extending support for non-Pydantic models.

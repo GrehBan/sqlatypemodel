@@ -6,22 +6,22 @@
 
 **Typed JSON fields for SQLAlchemy with automatic mutation tracking.**
 
-By default, SQLAlchemy does not detect in-place changes inside JSON columns. `sqlatypemodel` solves this problem, allowing you to work with strictly typed Python objects (Pydantic, Dataclasses, Attrs, or custom classes) while ensuring all changes are automatically saved to the database.
+SQLAlchemy typically requires you to replace the entire JSON object to trigger an update. `sqlatypemodel` changes that. It allows you to work with strictly typed Python objects (Pydantic, Dataclasses, Attrs, or custom classes) while ensuring every change—no matter how deep—is automatically saved to the database.
 
-Under the hood, it uses **`orjson`**, ensuring extreme performance and native support for `datetime`, `UUID`, and `numpy`.
+It is powered by **`orjson`**, offering blazing-fast performance and native support for `datetime`, `UUID`, and `numpy`.
+
+Now with full support for **Pickle**, making it perfect for **Celery** tasks and caching.
 
 ## ✨ Key Features
 
 * **Seamless Integration:** Store Pydantic models directly in SQLAlchemy columns.
 * **Universal Support:** Works with **Pydantic (V1 & V2)**, **Dataclasses**, **Attrs**, and custom classes.
-* **Protocol Based:** Does not require strict inheritance from `BaseModel`—any class implementing `model_dump`/`model_validate` works.
+* **Pickle & Cache Ready:** Objects can be pickled, sent to Celery workers, or cached in Redis without losing tracking capabilities.
 * **Mutation Tracking:** Built-in `MutableMixin` detects deep changes (e.g., `user.data.list.append("item")`) and flags the row for update.
 * **High Performance:**
-* **Powered by `orjson`:** Rust-based serialization is 10x-50x faster than standard `json`.
-* **O(1) Wrapping:** Smart "short-circuit" logic prevents re-wrapping already tracked collections.
-* **Atomic Optimization:** Skips overhead for atomic types (`int`, `str`, `bool`).
-
-
+    * **Powered by `orjson`:** Rust-based serialization is 10x-50x faster than standard `json`.
+    * **O(1) Wrapping:** Smart "short-circuit" logic prevents re-wrapping already tracked collections.
+    * **Atomic Optimization:** Skips overhead for atomic types (`int`, `str`, `bool`).
 
 ## The Problem
 
@@ -66,6 +66,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session
 from sqlatypemodel import ModelType, MutableMixin
+from sqlatypemodel.sqlalchemy_utils import create_sync_engine
 
 # 1. Define your Pydantic Model
 # Note: MutableMixin MUST be the first parent class.
@@ -86,7 +87,8 @@ class User(Base):
     settings: Mapped[UserSettings] = mapped_column(ModelType(UserSettings))
 
 # 4. Usage
-engine = create_engine("sqlite:///")
+# Use our helper to get an orjson-optimized engine
+engine = create_sync_engine("sqlite:///") 
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
@@ -104,19 +106,48 @@ with Session(engine) as session:
 
 ```
 
-## Handling Raw Lists and Dicts
+## Celery & Caching Support (Pickle)
 
-⚠️ **Important:** `ModelType` requires a Pydantic-compatible model to know how to serialize data to JSON. You cannot pass a raw `List[int]` or `Dict` directly to `ModelType` without a wrapper, as it raises a `ValueError`.
+One of the hardest challenges with SQLAlchemy models is passing them to background tasks (like Celery) or caching them. Standard mutable tracking often breaks during serialization.
+
+`sqlatypemodel` solves this. You can safely pickle your models:
+
+```python
+import pickle
+
+# 1. User is loaded from DB
+user = session.get(User, 1)
+
+# 2. Serialize and send to a worker (e.g. RabbitMQ/Redis)
+payload = pickle.dumps(user)
+
+# --- In Worker Process ---
+
+# 3. Deserialize
+worker_user = pickle.loads(payload)
+
+# 4. Modify
+worker_user.settings.theme = "worker_updated"
+
+# 5. Send back or Merge
+session.merge(worker_user)
+session.commit() # Updates are saved!
+
+```
+
+## Handling Lists and Dicts
+
+⚠️ **Important:** `ModelType` expects a structured model. Do not pass raw `List[int]` or `Dict` directly to `ModelType`. Wrap them in a model.
 
 **Incorrect:**
 
 ```python
-# ❌ Will raise ValueError: Cannot resolve serialization for List
+# ❌ Will raise ValueError
 col: Mapped[List[int]] = mapped_column(ModelType(List[int]))
 
 ```
 
-**Correct (Use a Wrapper):**
+**Correct:**
 
 ```python
 class ListWrapper(MutableMixin, BaseModel):
@@ -130,76 +161,36 @@ class MyEntity(Base):
         default_factory=ListWrapper
     )
 
-# Usage:
-entity.raw_list.items.append(1)
-
 ```
 
 ## 🔧 Under the Hood: Architecture
 
-`sqlatypemodel` is designed for high-load production environments where stability across different databases is critical.
-
 ### 1. `orjson` Power
 
-We use `orjson` for serialization. This isn't just about raw speed (though it is ~50x faster than `json`). It provides native support for types that normally break standard JSON serializers: `datetime`, `UUID`, `numpy` arrays, and `dataclasses`.
+We use `orjson` for serialization. It is ~50x faster than `json` and supports types that normally break standard serializers: `datetime`, `UUID`, `numpy` arrays, and `dataclasses`.
 
-### 2 Utilities: Easy Engine Configuration
+### 2. Utilities: Easy Engine Configuration
 
-To use the full power of `sqlatypemodel` (support for `datetime`, `UUID`, high performance), SQLAlchemy must be configured to use `orjson` instead of the standard `json` library.
-
-Instead of manually passing serializer functions every time you create an engine, you can use our helper functions.
-
-**Why use this?**
-
-1. **Less Boilerplate:** You don't need to import `orjson` and define lambdas manually.
-2. **Consistency:** Guarantees that serialization and deserialization are symmetric and configured correctly for the library.
-
-### Example
-
-**The Hard Way (Standard SQLAlchemy):**
+To use the full power of `sqlatypemodel`, your SQLAlchemy Engine must be configured to use `orjson`. We provide helpers to do this automatically:
 
 ```python
-import orjson
-from sqlalchemy import create_engine
+from sqlatypemodel.sqlalchemy_utils import create_sync_engine, create_async_engine
 
-def fast_dumps(obj):
-    return orjson.dumps(obj).decode("utf-8")
-
-# You have to repeat this configuration everywhere
-engine = create_engine(
-    "postgresql://user:pass@localhost/db",
-    json_serializer=fast_dumps,
-    json_deserializer=orjson.loads
-)
-
-```
-
-**The Easy Way (sqlatypemodel):**
-
-```python
-from sqlatypemodel.sqlalchemy_utils import create_sync_engine
-
-# Automatically configured with orjson
+# Sync (SQLite, Postgres, etc.)
 engine = create_sync_engine("postgresql://user:pass@localhost/db")
 
-```
-
-We also support `asyncio`:
-
-```python
-from sqlatypemodel.sqlalchemy_utils import create_async_engine
-
+# Async (asyncpg, aiosqlite)
 engine = await create_async_engine("postgresql+asyncpg://...")
 
 ```
 
 ## Advanced Usage
 
-`sqlatypemodel` is not limited to Pydantic. You can use it with any class.
+`sqlatypemodel` is not limited to Pydantic.
 
 ### Python Dataclasses
 
-Standard dataclasses are supported, but you **must enable identity hashing** (`__hash__ = object.__hash__`) because standard dataclasses are unhashable by default when mutable, and `sqlatypemodel` requires parent tracking.
+We automatically patch `__hash__` for dataclasses to ensure tracking works, so you can use them out of the box.
 
 ```python
 from dataclasses import dataclass, asdict
@@ -208,8 +199,6 @@ from dataclasses import dataclass, asdict
 class Config(MutableMixin):
     retries: int
     host: str
-    # REQUIRED: Restore identity hashing for change tracking
-    __hash__ = object.__hash__
 
 # Usage
 config_col: Mapped[Config] = mapped_column(
@@ -222,50 +211,25 @@ config_col: Mapped[Config] = mapped_column(
 
 ```
 
-### Attrs
-
-If you use the `attrs` library, disable equality-based hashing (`eq=False`) or explicitly set hash logic.
-
-```python
-import attrs
-
-@attrs.define(eq=False) # eq=False enables identity hashing automatically
-class AttrsConfig(MutableMixin):
-    mode: str
-
-# Usage
-attrs_col: Mapped[AttrsConfig] = mapped_column(
-    ModelType(
-        AttrsConfig,
-        json_dumps=attrs.asdict,
-        json_loads=lambda d: AttrsConfig(**d)
-    )
-)
-
-```
-
 ## ⚠️ Important Caveats
 
-### 64-bit Integer Limit (`orjson`)
+### 64-bit Integer Limit
 
-Since `orjson` (written in Rust) is used for serialization, the library strictly adheres to **64-bit signed integer limits** (from `-2^63` to `2^63 - 1`).
-Python supports arbitrary-precision integers, but if you try to save an integer larger than 64-bit into a JSON column, `SerializationError` will be raised. This is a trade-off for performance and database compatibility.
+Since `orjson` is written in Rust, it strictly adheres to **64-bit signed integer limits** (from `-2^63` to `2^63 - 1`). If you try to save a larger integer, a `SerializationError` will be raised. This is a trade-off for performance.
 
 ### Identity Hashing
 
-To correctly bubble up change events from children to parents, `MutableMixin` requires **identity-based hashing** (`object.__hash__`). Do not use these models as keys in a `dict` or elements in a `set` if your logic relies on value equality.
+To track changes, `MutableMixin` uses **identity-based hashing** (`object.__hash__`). This means two models with the same data are considered "different" keys in a dictionary. Avoid using these mutable models as keys in sets or dicts if you rely on value equality.
 
 ## Verification & Stress Testing
 
-Reliability is paramount. We include a forensic-grade stress test suite (`tests/stress_test.py`) that anyone can run.
+Reliability is paramount. We include a forensic-grade stress test suite that anyone can run.
 
 The suite performs:
 
-1. **Hypothesis (Property-based testing):** Generates thousands of edge cases, including complex Unicode strings, deep nesting, and random object graphs.
-2. **Concurrency Test:** Verifies the absence of race conditions when writing to the DB from multiple threads.
-3. **Rollback Integrity:** Guarantees that upon transaction rollback, the Python object state in memory is correctly reset.
-
-### Run it yourself:
+1. **Hypothesis (Property-based testing):** Generates thousands of edge cases (deep nesting, Unicode, large numbers).
+2. **Concurrency Test:** Verifies safety in multi-threaded environments.
+3. **Rollback Integrity:** Guarantees state consistency after transaction rollbacks.
 
 ```bash
 poetry run pytest tests/test_stress.py
@@ -275,3 +239,7 @@ poetry run pytest tests/test_stress.py
 ## License
 
 MIT
+
+```
+
+```

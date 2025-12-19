@@ -16,34 +16,97 @@ from sqlalchemy.ext.mutable import (
 if TYPE_CHECKING:
     from .model_type import ModelType
 
-__all__ = [
+__all__ = (
     "MutableMixin",
-]
+)
 
 logger = logging.getLogger(__name__)
 
 M = TypeVar("M", bound="MutableMixin")
 
-_PYDANTIC_INTERNAL_ATTRS: frozenset[str] = frozenset(
+_ATOMIC_TYPES: frozenset[type] = frozenset(
     {
-        "_parents",
-        "__weakref__",
-        "model_config",
-        "model_fields",
+        str,
+        int,
+        float,
+        bool,
+        type(None),
+        bytes,
+        complex,
+        frozenset,
     }
 )
 
-# FIX: Исправлен синтаксис аннотации типа
-_ATOMIC_TYPES: tuple[type, ...] = (
-    str,
-    int,
-    float,
-    bool,
-    type(None),
-    bytes,
-    complex,
-    frozenset,
+_STARTSWITCH_SKIP_ATTRS: tuple[str, ...] = (
+    "_sa_",
+    "__pydantic_",
+    "_abc_",
+    "__private_",
+    "_pydantic_",
 )
+
+_PYTHON_INTERNAL_ATTRS: frozenset[str] = frozenset(
+    {
+        "__dict__",
+        "__class__",
+        "__weakref__",
+        "__annotations__",
+        "__slots__",
+        "__module__",
+        "__doc__",
+        "__qualname__",
+        "__orig_class__",
+        "__args__",
+        "__parameters__",
+        "__signature__",
+        "__dir__",
+        "__hash__",
+        "__eq__",
+        "__repr__",
+        "__str__",
+        "__getattribute__",
+        "__setattr__",
+    }
+)
+
+_PYDANTIC_INTERNAL_ATTRS: frozenset[str] = frozenset(
+    {
+        "model_config",
+        "model_fields",
+        "model_computed_fields",
+        "model_extra",
+        "model_fields_set",
+        "model_post_init",
+        "__fields__",
+        "__fields_set__",
+        "__config__",
+        "__validators__",
+        "__pre_root_validators__",
+        "__post_root_validators__",
+        "__schema_cache__",
+        "__json_encoder__",
+        "__custom_root_type__",
+        "__private_attributes__",
+    }
+)
+
+_LIB_AND_SA_ATTRS: frozenset[str] = frozenset(
+    {
+        "_parents",
+        "_max_nesting_depth",
+        "_sa_instance_state",
+        "_sa_adapter",
+        "registry",
+        "metadata",
+    }
+)
+
+_SKIP_ATTRS: frozenset[str] = (
+    _PYTHON_INTERNAL_ATTRS
+    | _PYDANTIC_INTERNAL_ATTRS
+    | _LIB_AND_SA_ATTRS
+)
+
 DEFAULT_MAX_NESTING_DEPTH = 100
 
 
@@ -124,6 +187,18 @@ class MutableMixin(Mutable):
     """
 
     __hash__ = object.__hash__
+    _max_nesting_depth: int = DEFAULT_MAX_NESTING_DEPTH
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        """Ensure the class remains hashable even if decorators stripped it.
+
+        Standard @dataclass and @attrs decorators set __hash__ to None
+        if eq=True and frozen=False. We restore identity hashing here
+        to ensure the object can be used in WeakKeyDictionary (_parents).
+        """
+        if cls.__hash__ is None:
+            cls.__hash__ = object.__hash__
+        return super().__new__(cls)
 
     def changed(self) -> None:
         """Mark the object as changed and propagate the event to parents."""
@@ -168,6 +243,17 @@ class MutableMixin(Mutable):
         cast("type[ModelType[Any]]", associate).register_mutable(cls)
         super().__init_subclass__(**kwargs)
 
+    def _should_skip_attr(self, attr_name: str) -> bool:
+        """Check if the attribute should be skipped during scanning/wrapping.
+
+        Optimized for speed: checks exact matches first (O(1)),
+        then prefixes via tuple (optimized in C).
+        """
+        return (
+            attr_name in _SKIP_ATTRS
+            or attr_name.startswith(_STARTSWITCH_SKIP_ATTRS)
+        )
+
     def _scan_and_wrap_fields(self) -> None:
         """Recursively scan and wrap all attributes to ensure change tracking.
 
@@ -175,25 +261,163 @@ class MutableMixin(Mutable):
         that the entire object graph is monitored for changes. It bypasses
         Pydantic validation for performance and compatibility.
         """
-        # Prevent circular reference infinite loops
         seen = {id(self)}
-        obj_dict = getattr(self, "__dict__", {})
 
-        for attr_name, attr_value in obj_dict.items():
-            if attr_name in _PYDANTIC_INTERNAL_ATTRS:
+        for attr_name in dir(self):
+            if self._should_skip_attr(attr_name):
+                continue
+
+            try:
+                attr_value = getattr(self, attr_name, None)
+            except Exception:
+                continue
+
+            if attr_value is None:
+                continue
+            
+            if type(attr_value) in _ATOMIC_TYPES:
                 continue
 
             wrapped = self._wrap_mutable(attr_value, seen)
 
             if wrapped is not attr_value:
-                # Use object.__setattr__ to bypass Pydantic validation
                 object.__setattr__(self, attr_name, wrapped)
+
+    def __getstate__(self) -> Any:
+        """Prepare state for pickling.
+        
+        Removes unpicklable WeakKeyDictionary and delegates to parent class.
+        Compatible with Pydantic V2 which nests attributes in '__dict__'.
+        """
+        logger.debug("Preparing pickle state for %s", self.__class__.__name__)
+        
+        state: dict[str, Any] = {}
+        parent_handled = False
+        
+        # 1. Try parent's __getstate__ first (Pydantic V2 / SQLAlchemy)
+        if hasattr(super(), "__getstate__"):
+            try:
+                parent_state = super().__getstate__()  # type: ignore[misc]
+                if parent_state is not None:
+                    if isinstance(parent_state, dict):
+                        state.update(parent_state)
+                        parent_handled = True
+                    else:
+                        return parent_state
+            except Exception as e:
+                logger.debug(
+                    "Parent __getstate__ failed or not compatible: %s", e
+                )
+        
+        # 2. If parent didn't handle state, collect it ourselves
+        if not parent_handled:
+            if hasattr(self, "__dict__"):
+                state.update(self.__dict__)
+            
+            if hasattr(self, "__slots__"):
+                for slot in self.__slots__:
+                    if slot in state:
+                        continue
+                    try:
+                        state[slot] = getattr(self, slot)
+                    except AttributeError:
+                        pass
+        
+        # 3. Remove unpicklable tracking state (AGGRESSIVE CLEANUP)
+        keys_to_remove = ("_parents", "_max_nesting_depth")
+        
+        # a) Remove from top level
+        for key in keys_to_remove:
+            state.pop(key, None)
+            
+        # b) [FIX] Remove from nested __dict__ (Pydantic V2 structure)
+        if "__dict__" in state and isinstance(state["__dict__"], dict):
+            for key in keys_to_remove:
+                state["__dict__"].pop(key, None)
+        
+        return state
+
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state from pickle.
+        
+        Re-initializes tracking state and delegates to parent class if needed.
+        
+        Args:
+            state: Dictionary from __getstate__.
+        """
+        logger.debug("Restoring pickle state for %s", self.__class__.__name__)
+        from weakref import WeakKeyDictionary
+        
+        # CRITICAL: Check if parent expects to handle __setstate__
+        parent_handles_setstate = hasattr(super(), "__setstate__")
+        
+        if parent_handles_setstate:
+            try:
+                super().__setstate__(state)  # type: ignore[misc]
+                
+                object.__setattr__(self, "_parents", WeakKeyDictionary())
+                
+                if not hasattr(self, "_max_nesting_depth"):
+                    object.__setattr__(
+                        self, "_max_nesting_depth", 
+                        self.__class__._max_nesting_depth
+                    )
+                
+            except Exception as e:
+                logger.warning(
+                    "Parent __setstate__ failed for %s: %s. "
+                    "Falling back to manual restoration.", 
+                    self.__class__.__name__, e
+                )
+                self._manual_setstate(state)
+        else:
+            self._manual_setstate(state)
+        
+        try:
+            self._scan_and_wrap_fields()
+        except Exception as e:
+            logger.debug(
+                "Could not re-wrap fields after unpickle for %s: %s", 
+                self.__class__.__name__, e
+            )
+
+
+    def _manual_setstate(self, state: dict[str, Any]) -> None:
+        """Manually restore state when parent doesn't have __setstate__.
+        
+        This is a helper method extracted for clarity.
+        
+        Args:
+            state: Dictionary of attributes to restore.
+        """
+        from weakref import WeakKeyDictionary
+        
+        for key, value in state.items():
+            if key in ("_parents", "_max_nesting_depth"):
+                continue
+            
+            try:
+                object.__setattr__(self, key, value)
+            except Exception as e:
+                logger.debug(
+                    "Could not restore attribute '%s' for %s: %s", 
+                    key, self.__class__.__name__, e
+                )
+        
+        object.__setattr__(self, "_parents", WeakKeyDictionary())
+        
+        if not hasattr(self, "_max_nesting_depth"):
+            object.__setattr__(
+                self, "_max_nesting_depth", 
+                self.__class__._max_nesting_depth
+            )
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Intercept attribute assignment to automatically wrap mutable structures.
 
         This method:
-        1. Skips Pydantic internal attributes.
+        1. Skips internal attributes that should not be tracked.
         2. Optimizes atomic types (int, str, etc.) by setting them directly.
         3. Wraps mutable collections (list, dict) in SQLAlchemy Mutable wrappers.
         4. Notifies SQLAlchemy of changes if the value actually changed.
@@ -202,48 +426,25 @@ class MutableMixin(Mutable):
             name: The name of the attribute being set.
             value: The value being assigned.
         """
-        # 1. Skip Pydantic internals and special attributes
-        if (
-            name.startswith(("__pydantic_", "_abc_", "__private_"))
-            or name in _PYDANTIC_INTERNAL_ATTRS
-        ):
+        if self._should_skip_attr(name):
             super().__setattr__(name, value)
             return
 
-        # FIX: Removed redundant check for _PYDANTIC_INTERNAL_ATTRS here
+        old_value = getattr(self, name, None)
+        if old_value is value:
+            return
 
-        # 2. Optimization for atomic types
-        if isinstance(value, _ATOMIC_TYPES):
-            old_value = getattr(self, name, None)
-            # Atomic types don't need wrapping, set directly
-            super().__setattr__(name, value)
-
+        if isinstance(value, MutableMixin):
+            value._parents[self] = name
+            object.__setattr__(self, name, value)
             if self._should_notify_change(old_value, value):
                 self.changed()
             return
 
-        # 3. Wrap mutable structures
         wrapped_value = self._wrap_mutable(value)
-        old_value = getattr(self, name, None)
 
-        if old_value is wrapped_value:
-            return
+        object.__setattr__(self, name, wrapped_value)
 
-        # 4. Set the wrapped value
-        super().__setattr__(name, wrapped_value)
-
-        # 5. SQLAlchemy / Pydantic consistency check
-        try:
-            stored_value = getattr(self, name)
-            if stored_value is not wrapped_value:
-                if isinstance(
-                    wrapped_value, MutableList | MutableDict | MutableSet
-                ):
-                    object.__setattr__(self, name, wrapped_value)
-        except AttributeError:
-            pass
-
-        # 6. Notify change
         if self._should_notify_change(old_value, wrapped_value):
             logger.debug(
                 "%s.%s changed from %r to %r",
@@ -280,7 +481,7 @@ class MutableMixin(Mutable):
                 value._parents[self] = None
             return value
 
-        if depth > DEFAULT_MAX_NESTING_DEPTH:
+        if depth > self._max_nesting_depth:
             return value
 
         seen.add(obj_id)
@@ -312,7 +513,7 @@ class MutableMixin(Mutable):
             The mutable collection with updated parenting and change handler.
         """
         if getattr(value, "changed", None) is not safe_changed:
-            value.changed = types.MethodType(safe_changed, value)  # type: ignore[method-assign]
+            value.changed = types.MethodType(safe_changed, value) # type: ignore[assignment]
 
         value._parents[self] = None
         return value
@@ -331,12 +532,32 @@ class MutableMixin(Mutable):
             The wrapped MutableMixin instance.
         """
         value._parents[self] = None
-        obj_dict: dict[str, Any] = getattr(value, "__dict__", {})
-        for attr_name, attr_value in obj_dict.items():
-            if attr_name not in _PYDANTIC_INTERNAL_ATTRS:
-                wrapped = self._wrap_mutable(attr_value, seen, depth)
-                if wrapped is not attr_value:
-                    super(MutableMixin, value).__setattr__(attr_name, wrapped)
+
+        attrs_to_scan: set[str] = set()
+        
+        if hasattr(value, "__dict__"):
+            attrs_to_scan.update(value.__dict__.keys())
+        
+        if hasattr(value, "__slots__"):
+            attrs_to_scan.update(value.__slots__)
+
+        for attr_name in attrs_to_scan:
+            if self._should_skip_attr(attr_name):
+                continue
+            
+            try:
+                attr_value = getattr(value, attr_name)
+            except Exception:
+                continue
+
+            if type(attr_value) in _ATOMIC_TYPES:
+                continue
+
+            wrapped = self._wrap_mutable(attr_value, seen, depth)
+            
+            if wrapped is not attr_value:
+                object.__setattr__(value, attr_name, wrapped)
+                
         return value
 
     def _wrap_list(
@@ -355,7 +576,7 @@ class MutableMixin(Mutable):
         wrapped = MutableList(
             [self._wrap_mutable(item, seen, depth) for item in value]
         )
-        wrapped.changed = types.MethodType(safe_changed, wrapped)  # type: ignore[method-assign]
+        wrapped.changed = types.MethodType(safe_changed, wrapped) # type: ignore[assignment]
         wrapped._parents[self] = None
         return wrapped
 
@@ -375,7 +596,7 @@ class MutableMixin(Mutable):
         wrapped = MutableDict(
             {k: self._wrap_mutable(v, seen, depth) for k, v in value.items()}
         )
-        wrapped.changed = types.MethodType(safe_changed, wrapped)  # type: ignore[method-assign]
+        wrapped.changed = types.MethodType(safe_changed, wrapped) # type: ignore[assignment]
         wrapped._parents[self] = None
         return wrapped
 
@@ -395,7 +616,7 @@ class MutableMixin(Mutable):
         wrapped = MutableSet(
             {self._wrap_mutable(item, seen, depth) for item in value}
         )
-        wrapped.changed = types.MethodType(safe_changed, wrapped)  # type: ignore[method-assign]
+        wrapped.changed = types.MethodType(safe_changed, wrapped) # type: ignore[assignment]
         wrapped._parents[self] = None
         return wrapped
 
@@ -452,7 +673,11 @@ class MutableMixin(Mutable):
             return value
         if isinstance(value, MutableList | MutableDict | MutableSet):
             return value  # type: ignore[return-value]
-        if isinstance(value, dict) and hasattr(cls, "model_validate"):
+        if (
+            isinstance(value, dict)
+            and hasattr(cls, "model_validate")
+            and callable(cls.model_validate) # type: ignore[attr-defined]
+        ):
             try:
                 return cast(M, cls.model_validate(value))  # type: ignore[attr-defined]
             except Exception as e:

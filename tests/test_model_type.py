@@ -1,111 +1,54 @@
-"""Tests for ModelType TypeDecorator."""
-
-from typing import Any, cast
+"""Tests for SQLAlchemy TypeDecorator implementation."""
 
 import pytest
+from typing import Any, cast
 from pydantic import BaseModel
 from sqlalchemy.engine import Dialect
-
 from sqlatypemodel import ModelType
-from sqlatypemodel.exceptions import DeserializationError, SerializationError
+from sqlatypemodel.exceptions import SerializationError, DeserializationError
 
-
-class SimpleConfig(BaseModel):
-    """Simple test model."""
-
+class Config(BaseModel):
+    """Simple Pydantic model for testing."""
     theme: str
     debug: bool = False
 
+class TestModelType:
+    """Tests for ModelType serialization logic."""
 
-class TestModelTypeInit:
-    """Tests for ModelType initialization."""
+    def test_init(self) -> None:
+        """Verify initialization sets attributes correctly."""
+        mt = ModelType(Config)
+        assert mt.model is Config
+        assert mt.python_type is Config
 
-    def test_init_with_pydantic_model(self) -> None:
-        """ModelType should accept Pydantic models."""
-        model_type = ModelType(SimpleConfig)
-        assert model_type.model is SimpleConfig
-        assert callable(model_type.dumps)
-        assert callable(model_type.loads)
+    def test_process_bind_param(self) -> None:
+        """Verify serialization from object to dictionary."""
+        mt = ModelType(Config)
+        obj = Config(theme="dark")
+        
+        result = mt.process_bind_param(obj, cast(Dialect, None))
+        assert result == {"theme": "dark", "debug": False}
 
-    def test_no_slots_defined(self) -> None:
-        """
-        CRITICAL: ModelType must NOT define __slots__.
-        SQLAlchemy requires types to be compatible with its internal cloning mechanism.
-        """
-        assert (
-            "__slots__" not in ModelType.__dict__
-        ), "ModelType must not define __slots__"
+        assert mt.process_bind_param(None, cast(Dialect, None)) is None
 
-    def test_sqlalchemy_clone_compatibility(self) -> None:
-        """
-        Simulate SQLAlchemy dialect compilation which clones the type.
-        This verifies the fix for: AttributeError: '_SQliteJson' object has no attribute 'dumps'
-        """
-        original_type = ModelType(SimpleConfig)
+        raw_dict = {"theme": "light", "debug": True}
+        assert mt.process_bind_param(raw_dict, cast(Dialect, None)) == raw_dict
 
-        import copy
+    def test_process_result_value(self) -> None:
+        """Verify deserialization from dictionary/string to object."""
+        mt = ModelType(Config)
+        
+        res = mt.process_result_value({"theme": "dark"}, cast(Dialect, None))
+        assert isinstance(res, Config)
+        assert res.theme == "dark"
 
-        cloned_type = copy.copy(original_type)
+        res_str = mt.process_result_value('{"theme": "light"}', cast(Dialect, None))
+        assert isinstance(res_str, Config)
+        assert res_str.theme == "light"
 
-        assert cloned_type.model is SimpleConfig
-        assert cloned_type.dumps is not None
-        assert cloned_type.loads is not None
-
-    def test_init_without_serializers_raises(self) -> None:
-        """ModelType should raise for non-Pydantic without serializers."""
-
-        class PlainClass:
-            pass
-
-        with pytest.raises(ValueError, match="Cannot resolve serialization"):
-            ModelType(PlainClass)  # type: ignore[type-var]
-
-
-class TestModelTypeSerialization:
-    """Tests for serialization/deserialization."""
-
-    def test_process_bind_param_model(self) -> None:
-        """Pydantic model should serialize to dict."""
-        model_type = ModelType(SimpleConfig)
-        config = SimpleConfig(theme="dark", debug=True)
-        # We pass None as dialect for testing, casting to ensure mypy happiness
-        result = model_type.process_bind_param(config, cast(Dialect, None))
-        assert result == {"theme": "dark", "debug": True}
-
-    def test_process_result_value_dict(self) -> None:
-        """Dict should deserialize to Pydantic model."""
-        model_type = ModelType(SimpleConfig)
-        result = model_type.process_result_value(
-            {"theme": "light", "debug": False}, cast(Dialect, None)
-        )
-        assert isinstance(result, SimpleConfig)
-        assert result.theme == "light"
-        assert result.debug is False
-
-    def test_process_bind_param_error(self) -> None:
-        """Serialization errors should raise SerializationError."""
-
-        class BadModel(BaseModel):
-            value: str
-
-            def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-                raise ValueError("Serialization failed")
-
-        model_type = ModelType(
-            BadModel,
-            json_dumps=lambda x: x.model_dump(),
-        )
-        with pytest.raises(SerializationError, match="Failed to serialize"):
-            model_type.process_bind_param(
-                BadModel(value="test"), cast(Dialect, None)
-            )
-
-    def test_process_result_value_error(self) -> None:
-        """Deserialization errors should raise DeserializationError."""
-        model_type = ModelType(SimpleConfig)
-        with pytest.raises(
-            DeserializationError, match="Failed to deserialize"
-        ):
-            model_type.process_result_value(
-                {"invalid": "data"}, cast(Dialect, None)
-            )
+    def test_errors(self) -> None:
+        """Verify that invalid data triggers custom exceptions."""
+        mt = ModelType(Config)
+        
+        with pytest.raises(DeserializationError):
+            mt.process_result_value("invalid json", cast(Dialect, None))

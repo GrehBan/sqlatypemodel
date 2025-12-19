@@ -98,7 +98,7 @@ class DeserializationError(SQLATypeModelError):
     def __init__(
         self,
         model_name: str,
-        data: dict[str, Any] | None = None,
+        data: Any = None,
         original_error: Exception | None = None,
     ) -> None:
         """Initialize DeserializationError.

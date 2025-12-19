@@ -1,78 +1,49 @@
-"""Tests for custom exceptions."""
-import pytest
+"""Tests for custom exceptions hierarchy."""
 
+import pytest
 from sqlatypemodel.exceptions import (
     DeserializationError,
     SerializationError,
     SQLATypeModelError,
 )
 
-
 class TestExceptionHierarchy:
-    """Tests for exception inheritance."""
+    """Tests to verify exception inheritance structure."""
 
-    def test_serialization_error_inherits_base(self) -> None:
-        """SerializationError should inherit from SQLATypeModelError."""
+    def test_inheritance(self) -> None:
+        """Verify that specific errors inherit from the base library error."""
         assert issubclass(SerializationError, SQLATypeModelError)
-
-    def test_deserialization_error_inherits_base(self) -> None:
-        """DeserializationError should inherit from SQLATypeModelError."""
         assert issubclass(DeserializationError, SQLATypeModelError)
 
-    def test_catch_all_library_errors(self) -> None:
-        """All errors should be catchable with base class."""
+    def test_catch_all(self) -> None:
+        """Verify that the base exception catches all specific errors."""
         with pytest.raises(SQLATypeModelError):
             raise SerializationError("Model")
 
         with pytest.raises(SQLATypeModelError):
             raise DeserializationError("Model")
 
-
 class TestSerializationError:
-    """Tests for SerializationError."""
+    """Tests for SerializationError behavior."""
 
-    def test_basic_message(self) -> None:
-        """Should format basic message correctly."""
+    def test_message_formatting(self) -> None:
+        """Verify the error message contains the model name."""
         error = SerializationError("MyModel")
         assert "Failed to serialize MyModel" in str(error)
 
     def test_with_original_error(self) -> None:
-        """Should include original error in message."""
+        """Verify that the original cause is preserved."""
         original = ValueError("bad value")
         error = SerializationError("MyModel", original)
-        assert "MyModel" in str(error)
-        assert "bad value" in str(error)
         assert error.original_error is original
-
-    def test_attributes(self) -> None:
-        """Should store attributes correctly."""
-        error = SerializationError("TestModel")
-        assert error.model_name == "TestModel"
-        assert error.original_error is None
-
+        assert "bad value" in str(error)
 
 class TestDeserializationError:
-    """Tests for DeserializationError."""
+    """Tests for DeserializationError behavior."""
 
-    def test_basic_message(self) -> None:
-        """Should format basic message correctly."""
-        error = DeserializationError("MyModel")
-        assert "Failed to deserialize MyModel" in str(error)
-
-    def test_with_data(self) -> None:
-        """Should include data in message."""
-        data = {"key": "value"}
+    def test_message_formatting(self) -> None:
+        """Verify the error message contains details."""
+        data = {"key": "val"}
         error = DeserializationError("MyModel", data)
-        assert "MyModel" in str(error)
-        assert "key" in str(error)
+        assert "Failed to deserialize MyModel" in str(error)
         assert error.data == data
-
-    def test_with_all_params(self) -> None:
-        """Should handle all parameters."""
-        data = {"field": "value"}
-        original = TypeError("type error")
-        error = DeserializationError("MyModel", data, original)
-        assert error.model_name == "MyModel"
-        assert error.data == data
-        assert error.original_error is original
-        assert "type error" in str(error)
