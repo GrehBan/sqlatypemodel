@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "sqlatypemodel"
-version = "0.5.1rc1"
+version = "0.6.0"
 description = "Typed JSON fields for SQLAlchemy with automatic mutation tracking"
 readme = "README.md"
 requires-python = ">=3.10"
