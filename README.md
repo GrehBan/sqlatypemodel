@@ -54,7 +54,13 @@ pip install sqlatypemodel
 
 ```
 
-*Note: `orjson` is installed automatically as a required dependency.*
+Or
+
+```bash
+pip install sqlatypemodel[fast]
+
+```
+To install with `orjson`
 
 ## Quick Start (Pydantic)
 
