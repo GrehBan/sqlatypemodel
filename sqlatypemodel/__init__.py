@@ -34,19 +34,16 @@ Example:
 """
 from __future__ import annotations
 
-from . import sqlalchemy_utils, exceptions
+from sqlatypemodel import exceptions
 
 
-from .mixin import MutableMixin
-from .model_type import ModelType
-from .protocols import PT, PydanticModelProtocol
+from sqlatypemodel.mixin.mixin import MutableMixin, LazyMutableMixin
+from sqlatypemodel.model_type import ModelType
 
 __all__ = (
     "ModelType",
     "MutableMixin",
-    "PydanticModelProtocol",
-    "PT",
-    "sqlalchemy_utils",
+    "LazyMutableMixin",
     "exceptions",
 )
 
@@ -55,4 +52,4 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     __version__ = version("sqlatypemodel")
 except PackageNotFoundError:
-    __version__ = "0.6.0+unknown"
+    __version__ = "0.7.0rc1+unknown"

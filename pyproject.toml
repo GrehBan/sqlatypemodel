@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "sqlatypemodel"
-version = "0.6.0"
+version = "0.7.0rc1"
 description = "Typed JSON fields for SQLAlchemy with automatic mutation tracking"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,7 +27,6 @@ classifiers = [
 ]
 dependencies = [
     "sqlalchemy>=2.0.0,<3.0.0",
-    "pydantic>=2.0.0,<3.0.0",
 ]
 packages = [
     { include = "sqlatypemodel"}
@@ -49,6 +48,7 @@ pytest = "^8.0.0"
 pytest-cov = "^5.0.0" 
 hypothesis = "^6.148.7"
 attrs = "^25.4.0"
+pydantic = "^2.12.5"
 
 [tool.ruff]
 line-length = 79

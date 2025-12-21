@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2025-12-21
+
+A performance-focused release introducing **Lazy Loading** architecture, caching mechanisms, and a complete codebase refactor for strict typing and modularity.
+
+### Added
+
+* **Lazy Loading (`LazyMutableMixin`)**: Implemented a **Just-In-Time (JIT)** wrapping strategy.
+* **Performance**: Benchmarks demonstrate a **157x speedup** during database loading (7ms vs 1100ms for 5000 objects) by deferring wrapper creation until the moment of attribute access.
+* **Robustness**: Automatically handles data injected via "backdoors" (e.g., `pickle`, `model_construct`, direct `__dict__` manipulation) via `__getattribute__` interception.
+
+
+* **Introspection Caching**: Applied `@lru_cache(maxsize=4096)` to `inspection.ignore_attr_name`. This eliminates introspection overhead for repeated attribute access, reducing the cost of checks to near-zero (O(1)).
+* **Benchmarking Suite**: Added `tests/test_benchmark_mixins.py` using `pytest-benchmark` to objectively measure and compare Eager vs. Lazy performance characteristics under load.
+* **Modular Architecture**: Split monolithic logic into focused modules:
+* `inspection.py`: Validation and attribute scanning.
+* `wrapping.py`: Recursive collection wrapping logic.
+* `events.py`: Change propagation and `safe_changed` logic.
+* `protocols.py`: Strict typing definitions (`Trackable`).
+
+
+
+### Changed
+
+* **Code Quality**: Enforced **Google-style docstrings**, `Black` formatting (79 char limit), and `Ruff` rules (`I`, `UP`, `F`, `E`) across the entire codebase.
+* **Optimization Strategy**: Reordered attribute validation checks in `inspection.py`. Fast string operations (prefix checks, set lookups) are now performed before expensive object introspection.
+* **Test Architecture**: Migrated all tests to the **Ideal Test Architecture**:
+* Centralized fixtures in `tests/conftest.py` (Session, Engine, Models).
+* Removed `unittest` class-based tests in favor of functional `pytest`.
+* Added comprehensive type hints to all test files.
+
+
+
+### Fixed
+
+* **Constants Definition**: Fixed a syntax error in `constants.py` where `_ATOMIC_TYPES` was incorrectly defined as a tuple containing a set, instead of a flat `frozenset`.
+* **Type Safety**: Resolved circular imports between `mixin.py` and `model_type.py` using strictly typed protocols and conditional imports.
+
 ## [0.6.0] - 2025-12-19
 
 A major feature release introducing full **Pickle support** (enabling Caching/Celery workflows), correcting critical identity hashing logic, and fully aligning with SQLAlchemy 2.0 patterns.

@@ -102,5 +102,7 @@ class PydanticModelProtocol(Protocol):
         """
         ...
 
+"""Interfaces to break circular dependencies."""
+
 
 PT = TypeVar("PT", bound=PydanticModelProtocol)

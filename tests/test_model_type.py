@@ -1,54 +1,59 @@
 """Tests for SQLAlchemy TypeDecorator implementation."""
 
-import pytest
 from typing import Any, cast
+
+import pytest
 from pydantic import BaseModel
 from sqlalchemy.engine import Dialect
+
 from sqlatypemodel import ModelType
-from sqlatypemodel.exceptions import SerializationError, DeserializationError
+from sqlatypemodel.exceptions import DeserializationError
+
 
 class Config(BaseModel):
     """Simple Pydantic model for testing."""
     theme: str
     debug: bool = False
 
+
 class TestModelType:
     """Tests for ModelType serialization logic."""
 
-    def test_init(self) -> None:
-        """Verify initialization sets attributes correctly."""
-        mt = ModelType(Config)
-        assert mt.model is Config
-        assert mt.python_type is Config
+    @pytest.fixture
+    def model_type(self) -> ModelType[Config]:
+        return ModelType(Config)
 
-    def test_process_bind_param(self) -> None:
+    def test_init(self, model_type: ModelType[Config]) -> None:
+        """Verify initialization sets attributes correctly."""
+        assert model_type.model is Config
+        assert model_type.python_type is Config
+
+    def test_process_bind_param(self, model_type: ModelType[Config]) -> None:
         """Verify serialization from object to dictionary."""
-        mt = ModelType(Config)
         obj = Config(theme="dark")
-        
-        result = mt.process_bind_param(obj, cast(Dialect, None))
+        dummy_dialect = cast(Dialect, None)
+
+        result = model_type.process_bind_param(obj, dummy_dialect)
         assert result == {"theme": "dark", "debug": False}
 
-        assert mt.process_bind_param(None, cast(Dialect, None)) is None
+        assert model_type.process_bind_param(None, dummy_dialect) is None
 
         raw_dict = {"theme": "light", "debug": True}
-        assert mt.process_bind_param(raw_dict, cast(Dialect, None)) == raw_dict
+        assert model_type.process_bind_param(raw_dict, dummy_dialect) == raw_dict
 
-    def test_process_result_value(self) -> None:
+    def test_process_result_value(self, model_type: ModelType[Config]) -> None:
         """Verify deserialization from dictionary/string to object."""
-        mt = ModelType(Config)
-        
-        res = mt.process_result_value({"theme": "dark"}, cast(Dialect, None))
+        dummy_dialect = cast(Dialect, None)
+
+        res = model_type.process_result_value({"theme": "dark"}, dummy_dialect)
         assert isinstance(res, Config)
         assert res.theme == "dark"
 
-        res_str = mt.process_result_value('{"theme": "light"}', cast(Dialect, None))
+        res_str = model_type.process_result_value('{"theme": "light"}', dummy_dialect)
         assert isinstance(res_str, Config)
         assert res_str.theme == "light"
 
-    def test_errors(self) -> None:
+    def test_errors(self, model_type: ModelType[Config]) -> None:
         """Verify that invalid data triggers custom exceptions."""
-        mt = ModelType(Config)
-        
         with pytest.raises(DeserializationError):
-            mt.process_result_value("invalid json", cast(Dialect, None))
+            model_type.process_result_value("invalid json", cast(Dialect, None))

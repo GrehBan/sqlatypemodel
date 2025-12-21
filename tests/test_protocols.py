@@ -1,8 +1,11 @@
 """Tests for protocol conformance."""
 
 from typing import Any
+
 from pydantic import BaseModel
-from sqlatypemodel.protocols import PydanticModelProtocol
+
+from sqlatypemodel.model_type.protocols import PydanticModelProtocol
+
 
 class TestPydanticModelProtocol:
     """Tests for runtime protocol checking."""
@@ -20,7 +23,7 @@ class TestPydanticModelProtocol:
         class CustomModel:
             def model_dump(self, mode: str = "python") -> dict[str, Any]:
                 return {}
-            
+
             @classmethod
             def model_validate(cls, obj: dict[str, Any]) -> "CustomModel":
                 return cls()

@@ -3,7 +3,7 @@ from typing import Any
 from sqlalchemy import create_engine as sa_create_engine, Engine
 from sqlalchemy.ext.asyncio import create_async_engine as sa_create_async_engine, AsyncEngine
 
-from .serializer import get_serializers
+from .json import get_serializers
 
 __all__ = ("create_engine", "create_async_engine")
 
