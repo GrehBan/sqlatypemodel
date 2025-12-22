@@ -20,6 +20,7 @@ class DataClassModel(MutableMixin):
     data: list[int]
     meta: dict[str, Any]
 
+# ... PlainModel definitions ...
 
 class TestDataclassSupport:
     """Tests for Python Dataclasses compatibility."""
@@ -34,19 +35,22 @@ class TestDataclassSupport:
     def test_identity_hashing(self) -> None:
         m1 = DataClassModel(data=[1], meta={})
         m2 = DataClassModel(data=[1], meta={})
-        assert m1 == m2
+        
+        # FIX: Objects must be compared by identity, so even with same data they are unequal
+        assert m1 != m2
         assert hash(m1) != hash(m2)
         assert isinstance(hash(m1), int)
 
     def test_change_tracking(self) -> None:
         model = DataClassModel(data=[1], meta={})
 
-        tracked_data = cast(Trackable, model.data)
-        
-        assert hasattr(tracked_data, "_parents")
-        assert model in tracked_data._parents
-        assert tracked_data._parents[model] == "data"
+        # Mypy sees model.data as list[int], which doesn't have _parents.
+        # Use cast or getattr.
+        assert model in cast(Trackable, model.data)._parents
+        assert cast(Trackable, model.data)._parents[model] == "data"
 
+
+# ... TestPlainClassSupport ...
 
 @pytest.mark.skipif(attrs_define is None, reason="attrs library is not installed")
 class TestAttrsSupport:

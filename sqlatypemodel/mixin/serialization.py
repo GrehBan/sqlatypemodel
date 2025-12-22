@@ -6,13 +6,16 @@ from sqlatypemodel.util import constants
 
 
 class ForceHashMixin:
-    """Mixin to enforce object identity hashing.
+    """Mixin to enforce object identity hashing and equality.
 
     This ensures that objects can be used in weak references even if their
     default hashing behavior is modified or disabled (e.g., by Pydantic).
+    It also prevents attribute access during equality checks (via generated __eq__),
+    which can crash during initialization of Dataclasses.
     """
 
     __hash__ = object.__hash__
+    __eq__ = object.__eq__  # Force identity equality
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Any:
         """Ensure __hash__ is set to identity hash upon creation.
@@ -26,6 +29,8 @@ class ForceHashMixin:
         """
         if getattr(cls, "__hash__", None) is None:
             cls.__hash__ = ForceHashMixin.__hash__ # type: ignore [method-assign]
+        if getattr(cls, "__eq__", None) is None:
+            cls.__eq__ = ForceHashMixin.__eq__ # type: ignore [method-assign]
         return super().__new__(cls)
 
 

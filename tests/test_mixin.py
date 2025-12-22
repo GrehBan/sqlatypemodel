@@ -13,7 +13,7 @@ class TestMutableMixinIdentity:
         m1 = EagerModel(data=["a"])
         m2 = EagerModel(data=["a"])
 
-        assert m1 == m2
+        assert m1 != m2
         assert hash(m1) != hash(m2)
 
         original_hash = hash(m1)

@@ -7,82 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.0] - 2025-12-22
 
-A **major performance and architecture release**. This version introduces the **Lazy Loading** architecture (up to **150x faster reads**), production-grade optimizations, new developer utilities, and a complete codebase refactor.
+A **monumental release** rewriting the core architecture. This version introduces **Lazy Loading** (150x faster reads), **Graph Isomorphism** support for circular references, production-grade **Pickle stability**, and completes the support for Python Dataclasses/Attrs.
 
-### 🚀 New Features
+### 🚀 New Features & Architecture
 
 - **Lazy Loading (`LazyMutableMixin`)**:
   - **Zero-cost loading**: Objects loaded from the database remain as raw Python dicts/lists until accessed.
-  - **JIT (Just-In-Time) Wrapping**: Mutation tracking wrappers are created on-demand via `__getattribute__` interception.
+  - **JIT Wrapping**: Mutation tracking wrappers are created on-demand via `__getattribute__`.
+  - **Self-Healing**: Automatically restores parent-child tracking links if an object loses them (e.g., after `pickle` restoration or direct `__dict__` manipulation).
   - **Performance**: Loading 5,000 nested objects takes **~7ms** (Lazy) vs **~1100ms** (Eager).
-  - **Robustness**: Automatically handles data injected via "backdoors" (e.g., `pickle`, `__dict__` update) by restoring tracking dynamically upon access.
+
+- **Graph Isomorphism (Circular Reference Support)**:
+  - **The Problem**: Previously, self-referencing structures (e.g., `l = []; l.append(l)`) caused infinite recursion or returned raw objects.
+  - **The Solution**: The wrapping logic now uses a `_seen` dictionary (instead of a `_seen` set). It correctly detects cycles and returns the **existing wrapper**, preserving the exact object graph structure.
 
 - **Developer Utilities**:
-  - **SQLAlchemy Helpers** (`sqlatypemodel.util.sqlalchemy`): Added `create_engine` and `create_async_engine` wrappers that automatically configure `orjson` serializers with fallback logic.
-  - **Attrs Helper** (`sqlatypemodel.util.attrs`): Added a `define` wrapper that enforces `slots=False` and `eq=False`, preventing common runtime errors with `attrs` models.
+  - **SQLAlchemy Helpers** (`sqlatypemodel.util.sqlalchemy`): Added `create_engine` wrappers that auto-configure `orjson` with fallback logic.
+  - **Attrs Helper** (`sqlatypemodel.util.attrs`): Added a `define` wrapper enforcing `slots=False` and `eq=False`.
 
-- **Batching & Optimization**:
-  - **Batch Context**: Introduced `batch_changes()` context manager. It suppresses intermediate change notifications during bulk updates, triggering only one SQL flag at the end.
-  - **Sentinel Pattern**: Introduced `constants.MISSING` to correctly distinguish between "attribute doesn't exist" and "attribute is None", fixing silent failures on first assignment.
+- **Batching Context**:
+  - Introduced `batch_changes()` context manager. Suppresses intermediate SQL updates during bulk loops (`for i in range(100): list.append(i)` -> 1 update).
+
+### 🛡️ Critical Stability Fixes
+
+- **Pickle Robustness (No Monkey-Patching)**:
+  - **Fix**: Removed runtime monkey-patching of `instance.changed = ...`. This was causing objects to lose tracking capabilities after unpickling (standard `pickle` drops instance methods).
+  - **Implementation**: Introduced `MutableMethods` mixin. Notification logic is now part of the class definition (`KeyableMutableList`, etc.), ensuring it survives serialization cycles.
+
+- **Dataclass Initialization Safety**:
+  - **Fix**: Fixed a crash (`AttributeError`) when initializing Python Dataclasses.
+  - **Details**: Dataclasses generate an `__eq__` method that reads all fields. When `MutableMixin` tried to register a partially initialized object, `WeakKeyDictionary` triggered an equality check, crashing the process.
+  - **Solution**: `ForceHashMixin` now enforces **Identity Equality** (`__eq__ = object.__eq__`) alongside identity hashing.
 
 - **ForceHashMixin**:
-  - New mixin ensuring objects remain hashable (using Identity Hashing) even when frameworks like Pydantic or Attrs try to disable `__hash__`. Critical for `WeakKeyDictionary` tracking logic.
+  - Ensures mutable objects remain hashable (via `id()`) even if Pydantic/Attrs try to disable `__hash__`. Essential for `WeakKeyDictionary` tracking.
 
 ### ⚡ Performance Improvements
 
 - **Introspection Caching**:
-  - Implemented `@lru_cache(maxsize=4096)` on `inspection.ignore_attr_name`.
-  - **Impact**: Reduces attribute access overhead to near-zero (**O(1)**) by caching introspection results.
+  - Added `@lru_cache` to `is_pydantic` and `ignore_attr_name`.
+  - **Impact**: Eliminates expensive MRO traversal and `hasattr` checks during deep structure scanning.
 
 - **Optimized Type Checks**:
-  - Changed `_ATOMIC_TYPES` to use a flat `frozenset`.
-  - **Impact**: Type membership checks are now O(1). `__setattr__` skips wrapping logic entirely for atomic types (`int`, `str`, `bool`), speeding up simple assignments.
+  - Converted `_ATOMIC_TYPES` to a flat `frozenset`. `__setattr__` now skips wrapping logic entirely for atomic types (int, str, bool) in O(1) time.
 
 - **Smart Change Detection**:
-  - Refined `__setattr__` logic to strictly check `old_value is new_value` before triggering overhead. Reduces unnecessary database dirty-marking by ~40%.
+  - `__setattr__` now strictly checks `old_value is new_value` before triggering overhead, reducing unnecessary DB dirty-marking by ~40%.
 
-### 🏗️ Architecture & Refactoring
+### 🏗️ Refactoring
 
-- **Modularization**:
-  The monolithic `mixin.py` has been split into focused modules:
-  - `sqlatypemodel.mixin.inspection`: Introspection and validation.
-  - `sqlatypemodel.mixin.wrapping`: Recursive collection wrapping logic.
-  - `sqlatypemodel.mixin.events`: Change signal propagation.
-  - `sqlatypemodel.mixin.protocols`: Strict type definitions (`Trackable` protocol).
-
-- **Auto-Registration**:
-  - Implemented `__init_subclass__` hook in `BaseMutableMixin`. Models now automatically register with `ModelType` upon inheritance, removing the need for manual setup.
-
-- **Strict Typing**:
-  - The codebase is now fully typed (`py.typed` marker included).
-  - Protocol definitions updated to match implementation signatures exactly.
-
-### 🐛 Bug Fixes
-
-- **Attrs Compatibility**: Fixed a crash when initializing `attrs` classes with `eq=True`. The library now safely handles identity-based hashing restoration preventing recursion loops.
-- **Constants Definition**: Fixed a syntax error where `_ATOMIC_TYPES` was defined as a tuple containing a set, breaking `isinstance` checks.
-- **IDE Introspection**: Removed `if not TYPE_CHECKING` guards from `__init__` methods to restore autocomplete and argument hints in IDEs (VS Code, PyCharm).
-- **Circular Imports**: Resolved circular dependencies between `model_type` and `mixin` using protocols.
-- **Recursion Safety**: Fixed a potential infinite loop in `process_result_value` by ensuring the `_seen` set is passed correctly during tracking restoration.
+- **Modularization**: Split monolithic `mixin.py` into `inspection`, `wrapping`, `events`, and `protocols`.
+- **Auto-Registration**: Implemented `__init_subclass__`. Models automatically register with `ModelType` upon inheritance.
+- **Strict Typing**: Codebase is fully typed with `py.typed` marker.
 
 ### 🧪 Testing
 
-- **Architecture**: Migrated entire test suite from `unittest` to native **Pytest**.
-- **Fixtures**: Added `conftest.py` with centralized `Session` and `Engine` (in-memory SQLite) fixtures.
-- **New Suites**:
-  - `test_benchmark_mixins.py`: Performance regression testing using `pytest-benchmark`.
-  - `test_custom_types.py`: Explicit compatibility tests for Attrs, Dataclasses, and Plain classes.
-  - `test_lazy.py`: Verification of JIT wrapping behavior.
+- **Migration to Pytest**: Replaced `unittest` with native Pytest fixtures.
+- **New Edge Case Suite**: Added `tests/test_edge_cases.py` covering:
+  - Circular dependencies (A -> A).
+  - Diamond dependencies (Shared mutable objects).
+  - Re-parenting objects between models.
+  - Pydantic `model_construct` bypass.
 
 ### 📦 Migration Guide
 
-**Non-Breaking**: This release is backward compatible with v0.6.x.
+**Non-Breaking**: Backward compatible with v0.6.x.
 
-**Recommendations**:
-1. **Read-Heavy Workloads**: Switch models to inherit from `LazyMutableMixin` for immediate performance gains.
-2. **Attrs Users**: Update imports to use `from sqlatypemodel.util.attrs import define` to ensure safe defaults.
-3. **Engine Config**: Use `from sqlatypemodel.util.sqlalchemy import create_engine` to get free `orjson` serialization performance.
-
+1. **Lazy Loading**: Switch to `class MyModel(LazyMutableMixin, ...)` for read-heavy apps.
+2. **Dataclasses/Attrs**: Ensure you are NOT relying on value-based equality (`==`) for mutable models, as `__eq__` is now identity-based.
 ## [0.6.0] - 2025-12-19
 
 A major feature release introducing full **Pickle support** (enabling Caching/Celery workflows), correcting critical identity hashing logic, and fully aligning with SQLAlchemy 2.0 patterns.
