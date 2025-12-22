@@ -95,7 +95,7 @@ from typing import List
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session
 from sqlatypemodel import ModelType, MutableMixin
-from sqlatypemodel.sqlalchemy_utils import create_sync_engine
+from sqlatypemodel.util.sqlalchemy import create_engine
 
 # 1. Define Pydantic Model (Inherit from MutableMixin)
 class UserSettings(MutableMixin, BaseModel):
@@ -112,7 +112,7 @@ class User(Base):
     settings: Mapped[UserSettings] = mapped_column(ModelType(UserSettings))
 
 # 3. Usage
-engine = create_sync_engine("sqlite:///") 
+engine = create_engine("sqlite:///") 
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
@@ -213,35 +213,34 @@ class UserSettings(LazyMutableMixin, BaseModel):
 
 `sqlatypemodel` isn't just for Pydantic. It supports any Python class, provided you configure it correctly.
 
-### 1. Attrs Support
+### 1. Attrs (⚠️ Common Pitfall)
 
-**⚠️ Crucial Requirements:**
+**Critical:** You **must** disable slots and value-based equality.
 
-1. **`slots=False`**: `MutableMixin` needs `__dict__` to store internal tracking state (`_parents`, etc.).
-2. **`eq=False`**: `MutableMixin` enforces **Identity Hashing** (`hash(obj) == id(obj)`). If you let `attrs` generate a standard `__eq__` (value-based), it will conflict with the identity-based hash.
+* `slots=False`: The library needs `__dict__` to inject tracking metadata.
+* `eq=False`: We use Identity Hashing. Standard equality breaks tracking.
+
+We provide a helper to enforce this:
 
 ```python
-from attrs import define, asdict
+from attrs import asdict
 from sqlatypemodel import MutableMixin, ModelType
+# Use our helper to ensure safety
+from sqlatypemodel.util.attrs import define 
 
-# 1. Configuration
-@define(slots=False, eq=False)
+@define 
 class AttrsConfig(MutableMixin):
     retries: int
     tags: list[str]
 
-# 2. SQLAlchemy Mapping
-class User(Base):
-    __tablename__ = "users"
-    # ...
-    config: Mapped[AttrsConfig] = mapped_column(
-        ModelType(
-            AttrsConfig,
-            # Explicitly define how to serialize/deserialize
-            json_dumps=asdict,
-            json_loads=lambda d: AttrsConfig(**d)
-        )
+# Mapping
+col = mapped_column(
+    ModelType(
+        AttrsConfig,
+        json_dumps=asdict,
+        json_loads=lambda d: AttrsConfig(**d)
     )
+)
 
 ```
 
@@ -346,7 +345,7 @@ You also can manually create engine and provide our json serializers
 
 ```python
 from sqlalchemy import create_engine
-from sqlalchemy.util.json import get_serializers
+from sqlatypemodel.util.json import get_serializers
 
 dumps, loads = get_serializers(use_orjson=True)
 

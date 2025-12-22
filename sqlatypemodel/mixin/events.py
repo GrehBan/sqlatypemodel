@@ -1,14 +1,17 @@
 """Change notification logic and signal propagation."""
 
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Any
 
-from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy.orm import attributes
 
 from sqlatypemodel.mixin.protocols import Trackable
 
 logger = logging.getLogger(__name__)
+
+flag_modified = attributes.flag_modified
 
 
 def safe_changed(

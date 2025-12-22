@@ -1,6 +1,6 @@
 """Tests for SQLAlchemy TypeDecorator implementation."""
 
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from pydantic import BaseModel

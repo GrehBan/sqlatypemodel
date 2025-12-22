@@ -1,4 +1,4 @@
-from .mixin import MutableMixin, LazyMutableMixin, BaseMutableMixin
+from .mixin import BaseMutableMixin, LazyMutableMixin, MutableMixin
 
 __all__ = (
     "MutableMixin",

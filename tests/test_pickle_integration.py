@@ -1,12 +1,15 @@
 """Integration tests for Pickle in realistic scenarios."""
 
 import pickle
+from typing import cast
 
 import pytest
 from pydantic import BaseModel
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import Engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlatypemodel import ModelType, MutableMixin
+
 
 class IntegrationBase(DeclarativeBase):
     pass
@@ -26,7 +29,7 @@ class Task(IntegrationBase):
 class TestPickleIntegration:
     """Tests simulating external systems like Celery."""
 
-    def test_workflow_lifecycle(self, session, engine) -> None:
+    def test_workflow_lifecycle(self, session: Session, engine: Engine) -> None:
         """Verify object consistency across DB -> Pickle -> DB cycle."""
         IntegrationBase.metadata.create_all(engine)
 
@@ -48,8 +51,8 @@ class TestPickleIntegration:
 
         final_task = pickle.loads(result_payload)
         
-        merged_task = session.merge(final_task)
+        session.merge(final_task)
         session.commit()
 
-        saved = session.get(Task, task.id)
+        saved = cast(Task, session.get(Task, task.id))
         assert saved.config.retries == 1

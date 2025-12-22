@@ -1,20 +1,21 @@
-"""SQLAlchemy Mutable mixin for automatic change tracking."""
-
+"""Main Mixin module."""
 from __future__ import annotations
 
 import abc
 import inspect
 import logging
-from typing import TYPE_CHECKING, Any, ContextManager, TypeVar, cast
+from contextlib import AbstractContextManager
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 from weakref import WeakKeyDictionary
 
 from sqlalchemy.ext.mutable import Mutable
 
 from sqlatypemodel.mixin import events, inspection, serialization, wrapping
 from sqlatypemodel.util import constants
+from sqlatypemodel.mixin.protocols import MutableMethods
 
 if TYPE_CHECKING:
-    from sqlatypemodel.model_type import ModelType
+    from sqlatypemodel.model_type import ModelType  # noqa: F401
 
 __all__ = ("BaseMutableMixin", "MutableMixin", "LazyMutableMixin")
 
@@ -23,38 +24,28 @@ logger = logging.getLogger(__name__)
 M = TypeVar("M", bound="BaseMutableMixin")
 
 
-class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
-    """Abstract Base Class for Mutable Mixins.
-
-    This class provides the core mechanisms for change tracking, automatic
-    wrapping of mutable children, and state restoration.
-    """
+class BaseMutableMixin(serialization.ForceHashMixin, MutableMethods, Mutable, abc.ABC):
+    """Abstract Base Class for Mutable Mixins."""
 
     _max_nesting_depth: int = constants.DEFAULT_MAX_NESTING_DEPTH
     _change_suppress_level: int = 0
     _pending_change: bool = False
+    
+    _parents_store: WeakKeyDictionary[Any, Any]
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Initialize the mixin with default tracking state."""
-        object.__setattr__(self, "_change_suppress_level", 0)
-        object.__setattr__(self, "_pending_change", False)
-        super().__init__(*args, **kwargs)
+    if not TYPE_CHECKING:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            """Initialize the mixin with default tracking state."""
+            object.__setattr__(self, "_change_suppress_level", 0)
+            object.__setattr__(self, "_pending_change", False)
+            super().__init__(*args, **kwargs)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Register subclass with SQLAlchemy ModelType if auto_register is True.
-
-        Args:
-            **kwargs: Class arguments. Supports 'auto_register' (bool) and
-                      'associate' (ModelType subclass).
-        """
+        """Register subclass with SQLAlchemy ModelType."""
         auto_register = kwargs.pop("auto_register", True)
         associate_cls = kwargs.pop("associate", None)
 
-        if inspect.isabstract(cls):
-            super().__init_subclass__(**kwargs)
-            return
-
-        if not auto_register:
+        if not auto_register or inspect.isabstract(cls):
             super().__init_subclass__(**kwargs)
             return
 
@@ -69,56 +60,27 @@ class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
 
         cast("type[ModelType[Any]]", associate).register_mutable(cls)
         super().__init_subclass__(**kwargs)
-
-    @property
-    def _parents(self) -> WeakKeyDictionary:
-        """Retrieve or initialize the parents WeakKeyDictionary.
-
-        Returns:
-            A WeakKeyDictionary tracking parent objects.
-        """
-        try:
-            return self._parents_store
-        except AttributeError:
-            val = WeakKeyDictionary()
-            object.__setattr__(self, "_parents_store", val)
-            return val
-
+    
     def changed(self) -> None:
         """Notify observers that this object has changed."""
         if not events.mark_change_or_defer(self):
             return
-        events.safe_changed(self)
+        return super().changed()
 
-    def batch_changes(self) -> ContextManager[None]:
-        """Context manager to batch multiple changes into a single notification.
-
-        Returns:
-            A context manager for change suppression.
-        """
+    def batch_changes(self) -> AbstractContextManager[None]:
+        """Context manager to batch multiple changes."""
         return events.batch_change_suppression(self)
 
     def _should_skip_attr(self, attr_name: str) -> bool:
-        """Check if an attribute should be skipped during wrapping.
-
-        Args:
-            attr_name: The name of the attribute.
-
-        Returns:
-            True if the attribute should be ignored.
-        """
+        """Check if an attribute should be skipped during wrapping."""
         return inspection.ignore_attr_name(type(self), attr_name)
 
-    def _restore_tracking(self, _seen: set[int] | None = None) -> None:
+    def _restore_tracking(self, _seen: Any | None = None) -> None:
         """Restore tracking for the object (abstract method)."""
         raise NotImplementedError
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore object state from pickle.
-
-        Args:
-            state: The state dictionary.
-        """
+        """Restore object state from pickle."""
         if hasattr(super(), "__setstate__"):
             try:
                 super().__setstate__(state)  # type: ignore
@@ -131,11 +93,7 @@ class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
         self._restore_tracking()
 
     def __getstate__(self) -> dict[str, Any]:
-        """Prepare object state for pickling.
-
-        Returns:
-            A clean state dictionary.
-        """
+        """Prepare object state for pickling."""
         state: dict[str, Any] = {}
         parent_handled = False
         if hasattr(super(), "__getstate__"):
@@ -145,22 +103,18 @@ class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
                     state.update(parent_state)
                     parent_handled = True
                 elif parent_state is not None:
-                    return serialization.cleanup_pickle_state(parent_state)
+                    # Explicit cast/conversion for mypy
+                    return dict(serialization.cleanup_pickle_state(parent_state))
             except Exception:
                 pass
 
         if not parent_handled:
             state.update(inspection.extract_attrs_to_scan(self))
 
-        return serialization.cleanup_pickle_state(state)
+        return dict(serialization.cleanup_pickle_state(state))
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Set an attribute with automatic mutable wrapping and tracking.
-
-        Args:
-            name: The attribute name.
-            value: The value to assign.
-        """
+        """Set an attribute with automatic mutable wrapping and tracking."""
         if self._should_skip_attr(name):
             super().__setattr__(name, value)
             return
@@ -184,7 +138,8 @@ class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
         if wrapping.is_mutable_and_untracked(value):
             wrapped_value = wrapping.wrap_mutable(self, value, key=name)
             if hasattr(wrapped_value, "_parents"):
-                wrapped_value._parents[self] = name
+                # type ignore: we checked hasattr
+                wrapped_value._parents[self] = name # type: ignore[attr-defined]
             object.__setattr__(self, name, wrapped_value)
             if (
                 old_value is constants.MISSING
@@ -194,7 +149,7 @@ class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
             return
 
         if hasattr(value, "_parents"):
-            value._parents[self] = name
+            value._parents[self] = name # type: ignore[attr-defined]
             object.__setattr__(self, name, value)
 
             if (
@@ -211,18 +166,10 @@ class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
             and inspection.should_notify_change(old_value, value)
         ) or old_value is constants.MISSING:
             self.changed()
-
+    
+    # ... coerce method ...
     @classmethod
     def coerce(cls: type[M], key: str, value: Any) -> M | None:
-        """Coerce a value into the MutableMixin type.
-
-        Args:
-            key: The attribute name.
-            value: The value to coerce.
-
-        Returns:
-            The coerced instance or None.
-        """
         if value is None:
             return None
         if isinstance(value, cls):
@@ -242,19 +189,15 @@ class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
 
 
 class MutableMixin(BaseMutableMixin, auto_register=False):
-    """Standard (Eager) Implementation of MutableMixin.
-
-    This implementation scans and wraps fields immediately upon initialization.
-    """
+    """Standard (Eager) Implementation of MutableMixin."""
 
     if not TYPE_CHECKING:
-
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             """Initialize and immediately restore tracking."""
             super().__init__(*args, **kwargs)
             self._restore_tracking()
 
-    def _restore_tracking(self, _seen: set[int] | None = None) -> None:
+    def _restore_tracking(self, _seen: Any | None = None) -> None:
         """Recursively scan and wrap all fields."""
         try:
             wrapping.scan_and_wrap_fields(self, _seen=_seen)
@@ -263,24 +206,14 @@ class MutableMixin(BaseMutableMixin, auto_register=False):
 
 
 class LazyMutableMixin(BaseMutableMixin, auto_register=False):
-    """Lazy Implementation of MutableMixin.
+    """Lazy Implementation of MutableMixin."""
 
-    This implementation wraps fields only when they are accessed.
-    """
-
-    def _restore_tracking(self, _seen: set[int] | None = None) -> None:
-        """No-op for lazy mixin as tracking is restored on access."""
+    def _restore_tracking(self, _seen: Any | None = None) -> None:
+        """No-op for lazy mixin."""
         return
 
     def __getattribute__(self, name: str) -> Any:
-        """Retrieve attribute with Just-In-Time wrapping.
-
-        Args:
-            name: The attribute name.
-
-        Returns:
-            The attribute value, potentially wrapped.
-        """
+        """Retrieve attribute with Just-In-Time wrapping."""
         if name in constants._PYDANTIC_CLASS_ACCESS_ONLY:
             return getattr(type(self), name)
 
@@ -293,5 +226,6 @@ class LazyMutableMixin(BaseMutableMixin, auto_register=False):
             return value
 
         wrapped = wrapping.wrap_mutable(self, value, key=name)
-        object.__setattr__(self, name, wrapped)
+        if wrapped is not value:
+            object.__setattr__(self, name, wrapped)
         return wrapped

@@ -99,6 +99,23 @@ _PYDANTIC_ATTRS: Final[frozenset[str]] = frozenset(
     }
 )
 
+_DATACLASS_ATTRS: Final[frozenset[str]] = frozenset(
+    {
+        "__dataclass_fields__",
+        "__dataclass_params__",
+        "__post_init__",
+    }
+)
+
+_ATTRS_ATTRS: Final[frozenset[str]] = frozenset(
+    {
+        "__attrs_attrs__",
+        "__attrs_own_setattr__",
+        "__attrs_post_init__",
+        "__attrs_init__",
+    }
+)
+
 _PYDANTIC_CLASS_ACCESS_ONLY: Final[frozenset[str]] = frozenset(
     {
         "model_fields",
@@ -143,6 +160,7 @@ _SKIP_ATTRS: Final[frozenset[str]] = frozenset(
         "__str__",
         "__getattribute__",
         "__setattr__",
+        "__match_args__",  # Often present in modern python classes
         "_sa_instance_state",
         "_sa_adapter",
         "registry",
@@ -150,4 +168,6 @@ _SKIP_ATTRS: Final[frozenset[str]] = frozenset(
     }
     | _LIB_ATTRS
     | _PYDANTIC_ATTRS
+    | _DATACLASS_ATTRS
+    | _ATTRS_ATTRS
 )

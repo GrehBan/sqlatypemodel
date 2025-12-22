@@ -117,7 +117,7 @@ def should_notify_change(old_value: Any, new_value: Any) -> bool:
 
     if isinstance(
         old_value,
-        (list, dict, set, MutableList, MutableDict, MutableSet),
+        list | dict | set | MutableList | MutableDict | MutableSet,
     ):
         return True
 

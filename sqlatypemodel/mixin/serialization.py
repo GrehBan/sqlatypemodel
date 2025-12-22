@@ -25,7 +25,7 @@ class ForceHashMixin:
             A new instance of the class.
         """
         if getattr(cls, "__hash__", None) is None:
-            cls.__hash__ = ForceHashMixin.__hash__
+            cls.__hash__ = ForceHashMixin.__hash__ # type: ignore [method-assign]
         return super().__new__(cls)
 
 

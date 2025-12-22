@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 def wrap_mutable(
     parent: Any,
     value: Any,
-    seen: set[int] | None = None,
+    _seen: dict[int, Any] | None = None,
     depth: int = 0,
     key: Any = None,
 ) -> Any:
@@ -31,7 +31,7 @@ def wrap_mutable(
     Args:
         parent: The parent object owning the value.
         value: The value to wrap.
-        seen: A set of object IDs to detect cycles.
+        _seen: A dictionary mapping id(original) -> wrapped_instance for cycle detection.
         depth: Current recursion depth.
         key: The attribute name or index where the value is stored.
 
@@ -41,14 +41,16 @@ def wrap_mutable(
     if not is_mutable_and_untracked(value):
         return value
 
-    if seen is None:
-        seen = set()
+    if _seen is None:
+        _seen = {}
 
     obj_id = id(value)
-    if obj_id in seen:
-        if hasattr(value, "_parents"):
-            value._parents[parent] = key
-        return value
+    
+    if obj_id in _seen:
+        wrapped = _seen[obj_id]
+        if hasattr(wrapped, "_parents"):
+            wrapped._parents[parent] = key
+        return wrapped
 
     max_depth = getattr(
         parent, "_max_nesting_depth", constants.DEFAULT_MAX_NESTING_DEPTH
@@ -56,58 +58,34 @@ def wrap_mutable(
     if depth > max_depth:
         return value
 
-    seen.add(obj_id)
-
-    if isinstance(value, (MutableList, MutableDict, MutableSet)):
-        return _rewrap_mutable_collection(parent, value, key)
-
     if hasattr(value, "_parents"):
-        return _wrap_trackable(parent, value, seen, depth + 1, key)
+        _seen[obj_id] = value
+        return _wrap_trackable(parent, value, _seen, depth + 1, key)
+
+    if isinstance(value, MutableList | MutableDict | MutableSet):
+        _seen[obj_id] = value
+        if getattr(value, "changed", None) is not events.safe_changed and not hasattr(value, "_parents"):
+             value.changed = types.MethodType(events.safe_changed, value) # type: ignore
+        
+        if hasattr(value, "_parents"):
+             value._parents[parent] = key
+        return value
 
     value_type = type(value)
     if value_type is list:
-        return _wrap_list(parent, value, seen, depth + 1, key)
+        return _wrap_list(parent, value, _seen, depth + 1, key)
     if value_type is dict:
-        return _wrap_dict(parent, value, seen, depth + 1, key)
+        return _wrap_dict(parent, value, _seen, depth + 1, key)
     if value_type is set:
-        return _wrap_set(parent, value, seen, depth + 1, key)
+        return _wrap_set(parent, value, _seen, depth + 1, key)
 
-    return value
-
-
-def _rewrap_mutable_collection(parent: Any, value: Any, key: Any) -> Any:
-    """Re-parent an existing Mutable collection and ensure it is patched.
-
-    Args:
-        parent: The new parent object.
-        value: The mutable collection.
-        key: The key at which the collection is stored.
-
-    Returns:
-        The updated mutable collection.
-    """
-    if getattr(value, "changed", None) is not events.safe_changed:
-        value.changed = types.MethodType(events.safe_changed, value)
-
-    value._parents[parent] = key
     return value
 
 
 def _wrap_trackable(
-    parent: Any, value: Trackable, seen: set[int], depth: int, key: Any
+    parent: Any, value: Trackable, _seen: dict[int, Any], depth: int, key: Any
 ) -> Trackable:
-    """Wrap a trackable object and scan its children.
-
-    Args:
-        parent: The parent object.
-        value: The trackable object.
-        seen: Cycle detection set.
-        depth: Recursion depth.
-        key: The attribute name.
-
-    Returns:
-        The wrapped trackable object.
-    """
+    """Wrap a trackable object and scan its children."""
     value._parents[parent] = key
 
     attrs = inspection.extract_attrs_to_scan(value)
@@ -117,7 +95,7 @@ def _wrap_trackable(
         if inspection.ignore_attr_name(value_cls, attr_name):
             continue
 
-        wrapped = wrap_mutable(value, attr_val, seen, depth, key=attr_name)
+        wrapped = wrap_mutable(value, attr_val, _seen, depth, key=attr_name)
 
         if wrapped is not attr_val:
             object.__setattr__(value, attr_name, wrapped)
@@ -126,26 +104,17 @@ def _wrap_trackable(
 
 
 def _wrap_list(
-    parent: Any, value: list[Any], seen: set[int], depth: int, key: Any
+    parent: Any, value: list[Any], _seen: dict[int, Any], depth: int, key: Any
 ) -> MutableList[Any]:
-    """Wrap a standard list into a KeyableMutableList.
-
-    Args:
-        parent: The parent object.
-        value: The source list.
-        seen: Cycle detection set.
-        depth: Recursion depth.
-        key: The attribute name/index.
-
-    Returns:
-        A new KeyableMutableList containing wrapped items.
-    """
-    wrapped = KeyableMutableList(value)
-    wrapped.changed = types.MethodType(events.safe_changed, wrapped)
+    """Wrap a standard list into a KeyableMutableList."""
+    wrapped: KeyableMutableList[Any] = KeyableMutableList(value)
+    
+    _seen[id(value)] = wrapped
+    
     wrapped._parents[parent] = key
 
     for i, item in enumerate(wrapped):
-        new_val = wrap_mutable(wrapped, item, seen, depth, key=i)
+        new_val = wrap_mutable(wrapped, item, _seen, depth, key=i)
         if new_val is not item:
             list.__setitem__(wrapped, i, new_val)
 
@@ -153,26 +122,16 @@ def _wrap_list(
 
 
 def _wrap_dict(
-    parent: Any, value: dict[Any, Any], seen: set[int], depth: int, key: Any
+    parent: Any, value: dict[Any, Any], _seen: dict[int, Any], depth: int, key: Any
 ) -> MutableDict[Any, Any]:
-    """Wrap a standard dict into a KeyableMutableDict.
-
-    Args:
-        parent: The parent object.
-        value: The source dict.
-        seen: Cycle detection set.
-        depth: Recursion depth.
-        key: The attribute name/index.
-
-    Returns:
-        A new KeyableMutableDict containing wrapped items.
-    """
-    wrapped = KeyableMutableDict(value)
-    wrapped.changed = types.MethodType(events.safe_changed, wrapped)
+    """Wrap a standard dict into a KeyableMutableDict."""
+    wrapped: KeyableMutableDict[Any, Any] = KeyableMutableDict(value)
+    
+    _seen[id(value)] = wrapped
     wrapped._parents[parent] = key
 
-    for k, v in wrapped.items():
-        new_val = wrap_mutable(wrapped, v, seen, depth, key=k)
+    for k, v in list(wrapped.items()):
+        new_val = wrap_mutable(wrapped, v, _seen, depth, key=k)
         if new_val is not v:
             dict.__setitem__(wrapped, k, new_val)
 
@@ -180,69 +139,41 @@ def _wrap_dict(
 
 
 def _wrap_set(
-    parent: Any, value: set[Any], seen: set[int], depth: int, key: Any
+    parent: Any, value: set[Any], _seen: dict[int, Any], depth: int, key: Any
 ) -> MutableSet[Any]:
-    """Wrap a standard set into a KeyableMutableSet.
-
-    Args:
-        parent: The parent object.
-        value: The source set.
-        seen: Cycle detection set.
-        depth: Recursion depth.
-        key: The attribute name/index.
-
-    Returns:
-        A new KeyableMutableSet containing wrapped items.
-    """
-    wrapped = KeyableMutableSet()
-    wrapped.changed = types.MethodType(events.safe_changed, wrapped)
+    """Wrap a standard set into a KeyableMutableSet."""
+    wrapped: KeyableMutableSet[Any] = KeyableMutableSet()
+    
+    _seen[id(value)] = wrapped
     wrapped._parents[parent] = key
 
     for item in value:
-        wrapped.add(wrap_mutable(wrapped, item, seen, depth, key=None))
+        wrapped.add(wrap_mutable(wrapped, item, _seen, depth, key=None))
 
     return wrapped
 
 
 def is_mutable_and_untracked(obj: Any) -> bool:
-    """Check if object needs wrapping OR patching.
-
-    Args:
-        obj: The object to inspect.
-
-    Returns:
-        True if the object is mutable and not yet correctly tracked/patched.
-    """
+    """Check if object needs wrapping OR patching."""
     if obj is None or type(obj) in constants._ATOMIC_TYPES:
         return False
-
-    if hasattr(obj, "_parents"):
-        if getattr(obj, "changed", None) is not events.safe_changed:
-            return True
-        return False
-
-    return isinstance(obj, (list, dict, set)) or inspection.is_pydantic(obj)
+    return isinstance(obj, list | dict | set) or inspection.is_pydantic(obj)
 
 
-def scan_and_wrap_fields(parent: Any, _seen: set[int] | None = None) -> None:
-    """Iterate over object fields and wrap mutable ones.
-
-    Args:
-        parent: The object to scan.
-        _seen: Cycle detection set.
-    """
+def scan_and_wrap_fields(parent: Any, _seen: Any | None = None) -> None:
+    """Iterate over object fields and wrap mutable ones."""
     if _seen is None:
-        _seen = set()
+        _seen = {}
 
     self_id = id(parent)
     if self_id in _seen:
         return
-    _seen.add(self_id)
+    _seen[self_id] = parent
 
     attrs = inspection.extract_attrs_to_scan(parent)
     for attr_name, attr_value in attrs.items():
         if (
-            inspection.ignore_attr_name(type(parent), attr_name)
+            inspection.ignore_attr_name(type(parent), attr_name) # type: ignore [arg-type]
             or attr_value is None
         ):
             continue
@@ -256,6 +187,6 @@ def scan_and_wrap_fields(parent: Any, _seen: set[int] | None = None) -> None:
                 wrapped._parents[parent] = attr_name
 
             if hasattr(wrapped, "_restore_tracking"):
-                wrapped._restore_tracking(_seen=_seen)
+                wrapped._restore_tracking(_seen=_seen) # type: ignore
         except Exception:
             pass

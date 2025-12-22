@@ -1,57 +1,54 @@
-"""Shared fixtures for pytest."""
-
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 
 import pytest
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, scoped_session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from pydantic import BaseModel, Field
+from sqlalchemy import Engine, StaticPool
+from sqlalchemy.orm import Session
 
 from sqlatypemodel import LazyMutableMixin, MutableMixin
+from sqlatypemodel.util.sqlalchemy import create_engine
 
 
 class EagerModel(MutableMixin, BaseModel):
-    """Standard eager model for testing."""
-    model_config = ConfigDict(validate_assignment=True)
+    """
+    Model for Eager loading tests.
+    """
+    model_config = {"extra": "allow"}
     
-    data: list[str] = Field(default_factory=list)
-    meta: dict[str, str] = Field(default_factory=dict)
-
-
+    data: list[Any] = Field(default_factory=list)
+    meta: dict[str, Any] = Field(default_factory=dict)
+    
 class LazyModel(LazyMutableMixin, BaseModel):
-    """Lazy model for testing."""
-    model_config = ConfigDict(
-        extra="allow",
-        arbitrary_types_allowed=True,
-        validate_assignment=False
-    )
+    """
+    Model for Lazy loading tests.
+    """
+    model_config = {"extra": "allow"}
+
     data: dict[str, Any] = Field(default_factory=dict)
     items: list[int] = Field(default_factory=list)
-    meta: dict[str, Any] | None = None
 
 
 @pytest.fixture(scope="session")
-def engine():
-    """Create a single in-memory database engine for the test session."""
-    return create_engine(
+def engine() -> Generator[Engine, None, None]:
+    """Shared in-memory engine."""
+    eng = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        poolclass=StaticPool # Важно для in-memory сохранения данных между сессиями
     )
-
+    yield eng
+    eng.dispose()
 
 @pytest.fixture(scope="function")
-def session(engine) -> Generator[Session, None, None]:
-    """Create a new session for each test function."""
-    connection = engine.connect()
-    transaction = connection.begin()
+def session(engine: Engine) -> Generator[Session, None, None]:
+    """Fresh session per test."""
+    conn = engine.connect()
+    trans = conn.begin()
+    sess = Session(bind=conn)
     
-    session_factory = sessionmaker(bind=connection)
-    session = scoped_session(session_factory)
+    yield sess
     
-    yield session
-    
-    session.remove()
-    transaction.rollback()
-    connection.close()
+    sess.close()
+    trans.rollback()
+    conn.close()

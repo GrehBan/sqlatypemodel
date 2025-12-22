@@ -35,9 +35,7 @@ Example:
 from __future__ import annotations
 
 from sqlatypemodel import exceptions
-
-
-from sqlatypemodel.mixin.mixin import MutableMixin, LazyMutableMixin
+from sqlatypemodel.mixin.mixin import LazyMutableMixin, MutableMixin
 from sqlatypemodel.model_type import ModelType
 
 __all__ = (

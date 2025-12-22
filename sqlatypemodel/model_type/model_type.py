@@ -11,7 +11,6 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Dialect
 
 from sqlatypemodel.exceptions import DeserializationError, SerializationError
-from sqlatypemodel.mixin.protocols import Trackable
 from sqlatypemodel.model_type.protocols import PT, PydanticModelProtocol
 from sqlatypemodel.util.json import get_serializers
 
@@ -209,7 +208,7 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
             return None
 
         try:
-            if isinstance(value, (str, bytes)):
+            if isinstance(value, str | bytes):
                 value = self._json_loads_str(value)
 
             result = self.loads(cast("dict[str, Any]", value))
