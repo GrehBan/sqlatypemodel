@@ -1,6 +1,5 @@
 """Tests for compatibility with Dataclasses, Attrs, and Plain classes."""
 
-from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
@@ -8,6 +7,7 @@ from sqlalchemy.ext.mutable import MutableDict, MutableList
 
 from sqlatypemodel import MutableMixin
 from sqlatypemodel.mixin.protocols import Trackable
+from sqlatypemodel.util.dataclasses import dataclass
 
 try:
     from attrs import define as attrs_define
@@ -36,7 +36,7 @@ class TestDataclassSupport:
         m1 = DataClassModel(data=[1], meta={})
         m2 = DataClassModel(data=[1], meta={})
         
-        # FIX: Objects must be compared by identity, so even with same data they are unequal
+        # Objects are compared by identity (eq=False), so they are distinct
         assert m1 != m2
         assert hash(m1) != hash(m2)
         assert isinstance(hash(m1), int)
@@ -44,8 +44,6 @@ class TestDataclassSupport:
     def test_change_tracking(self) -> None:
         model = DataClassModel(data=[1], meta={})
 
-        # Mypy sees model.data as list[int], which doesn't have _parents.
-        # Use cast or getattr.
         assert model in cast(Trackable, model.data)._parents
         assert cast(Trackable, model.data)._parents[model] == "data"
 

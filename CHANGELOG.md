@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.0] - 2025-12-22
 
-A **monumental release** rewriting the core architecture. This version introduces **Lazy Loading** (150x faster reads), **Graph Isomorphism** support for circular references, production-grade **Pickle stability**, and completes the support for Python Dataclasses/Attrs.
+A **monumental release** rewriting the core architecture. This version introduces **Lazy Loading** (up to 150x faster reads), **Graph Isomorphism** support for circular references, production-grade **Pickle stability**, and robust support for Python Dataclasses on Python 3.12+.
 
 ### 🚀 New Features & Architecture
 
@@ -18,12 +18,13 @@ A **monumental release** rewriting the core architecture. This version introduce
   - **Performance**: Loading 5,000 nested objects takes **~7ms** (Lazy) vs **~1100ms** (Eager).
 
 - **Graph Isomorphism (Circular Reference Support)**:
-  - **The Problem**: Previously, self-referencing structures (e.g., `l = []; l.append(l)`) caused infinite recursion or returned raw objects.
+  - **The Problem**: Previously, self-referencing structures (e.g., `l = []; l.append(l)`) caused infinite recursion or returned raw objects during wrapping.
   - **The Solution**: The wrapping logic now uses a `_seen` dictionary (instead of a `_seen` set). It correctly detects cycles and returns the **existing wrapper**, preserving the exact object graph structure.
 
 - **Developer Utilities**:
+  - **Dataclass Wrapper** (`sqlatypemodel.util.dataclasses`): Added a safe `@dataclass` wrapper that forces `eq=False` and `slots=False`. This prevents recursion crashes during initialization on Python 3.12+ and ensures compatibility with `MutableMixin`.
   - **SQLAlchemy Helpers** (`sqlatypemodel.util.sqlalchemy`): Added `create_engine` wrappers that auto-configure `orjson` with fallback logic.
-  - **Attrs Helper** (`sqlatypemodel.util.attrs`): Added a `define` wrapper enforcing `slots=False` and `eq=False`.
+  - **Attrs Helper** (`sqlatypemodel.util.attrs`): Added a `define` wrapper enforcing safe defaults (`slots=False`, `eq=False`).
 
 - **Batching Context**:
   - Introduced `batch_changes()` context manager. Suppresses intermediate SQL updates during bulk loops (`for i in range(100): list.append(i)` -> 1 update).
@@ -34,9 +35,9 @@ A **monumental release** rewriting the core architecture. This version introduce
   - **Fix**: Removed runtime monkey-patching of `instance.changed = ...`. This was causing objects to lose tracking capabilities after unpickling (standard `pickle` drops instance methods).
   - **Implementation**: Introduced `MutableMethods` mixin. Notification logic is now part of the class definition (`KeyableMutableList`, etc.), ensuring it survives serialization cycles.
 
-- **Dataclass Initialization Safety**:
-  - **Fix**: Fixed a crash (`AttributeError`) when initializing Python Dataclasses.
-  - **Details**: Dataclasses generate an `__eq__` method that reads all fields. When `MutableMixin` tried to register a partially initialized object, `WeakKeyDictionary` triggered an equality check, crashing the process.
+- **Dataclass Initialization Safety (Python 3.12+)**:
+  - **Fix**: Resolved `AttributeError` crashes and recursion loops during Dataclass initialization.
+  - **Root Cause**: `WeakKeyDictionary` checks equality on insertion. Standard Dataclasses generate value-based `__eq__` which crashes on partially initialized objects and violates the Identity Hashing contract.
   - **Solution**: `ForceHashMixin` now enforces **Identity Equality** (`__eq__ = object.__eq__`) alongside identity hashing.
 
 - **ForceHashMixin**:
@@ -74,7 +75,8 @@ A **monumental release** rewriting the core architecture. This version introduce
 **Non-Breaking**: Backward compatible with v0.6.x.
 
 1. **Lazy Loading**: Switch to `class MyModel(LazyMutableMixin, ...)` for read-heavy apps.
-2. **Dataclasses/Attrs**: Ensure you are NOT relying on value-based equality (`==`) for mutable models, as `__eq__` is now identity-based.
+2. **Dataclasses**: Use `from sqlatypemodel.util.dataclasses import dataclass` instead of the standard library to ensure safety.
+
 ## [0.6.0] - 2025-12-19
 
 A major feature release introducing full **Pickle support** (enabling Caching/Celery workflows), correcting critical identity hashing logic, and fully aligning with SQLAlchemy 2.0 patterns.

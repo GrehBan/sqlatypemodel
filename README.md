@@ -16,25 +16,21 @@ Powered by **`orjson`** for blazing-fast performance and featuring a **Lazy Load
 ## ✨ Key Features
 
 * **🐢 -> 🐇 Lazy Loading (v0.7.0):**
-* **Zero-cost loading:** Objects loaded from the DB are raw Python dicts until you access them.
-* **JIT Wrapping:** Wrappers are created Just-In-Time. Loading 5,000 objects takes **7ms** instead of **1.1s**.
-
+  * **Zero-cost loading:** Objects loaded from the DB are raw Python dicts until you access them.
+  * **JIT Wrapping:** Wrappers are created Just-In-Time. Loading 5,000 objects takes **~7ms** instead of **~1.1s**.
 
 * **🥒 Pickle & Celery Ready:**
-* Full support for `pickle`. Pass your database models directly to **Celery** workers or cache them in **Redis**.
-* Tracking is automatically restored upon deserialization.
-
+  * Full support for `pickle`. Pass your database models directly to **Celery** workers or cache them in **Redis**.
+  * Tracking is automatically restored upon deserialization.
 
 * **🚀 High Performance:**
-* **Powered by `orjson`:** 10x-50x faster serialization than standard `json`.
-* **Native Types:** Supports `datetime`, `UUID`, and `numpy` out of the box.
-* **Smart Caching:** Introspection results are cached (`O(1)` overhead).
-
+  * **Powered by `orjson`:** 10x-50x faster serialization than standard `json`.
+  * **Native Types:** Supports `datetime`, `UUID`, and `numpy` out of the box.
+  * **Smart Caching:** Introspection results are cached (`O(1)` overhead).
 
 * **🔄 Deep Mutation Tracking:**
-* Detects changes like `user.settings.tags.append("new")` automatically.
-* No more `flag_modified()` or reassigning the whole object.
-
+  * Detects changes like `user.settings.tags.append("new")` automatically.
+  * No more `flag_modified()` or reassigning the whole object.
 
 * **Universal Support:** Works with Pydantic (V1 & V2), Dataclasses, Attrs, and Plain classes.
 
@@ -112,6 +108,7 @@ class User(Base):
     settings: Mapped[UserSettings] = mapped_column(ModelType(UserSettings))
 
 # 3. Usage
+# Use our helper to get free orjson configuration
 engine = create_engine("sqlite:///") 
 Base.metadata.create_all(engine)
 
@@ -126,12 +123,9 @@ with Session(engine) as session:
 
 ```
 
-
 ### 🔧 Internal Magic:
 
-The library uses `__init_subclass__` to automate the connection between your models and the SQLAlchemy `ModelType`.
-
-When you inherit from `BaseMutableMixin` (or its derivatives), the library automatically handles registration:
+The library uses `__init_subclass__` to automate the connection between your models and the SQLAlchemy `ModelType`. When you inherit from `BaseMutableMixin` (or its derivatives), the library automatically handles registration.
 
 ```python
 class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
@@ -153,41 +147,10 @@ class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
 
 * **Zero Configuration:** Just inherit, and the model is ready for tracking.
 * **`auto_register=False`**: Use this flag if you want to define a base class for your models but don't want it globally registered yet.
-* **`associate=MyCustomModelType`**: Use this if you have multiple different `ModelType` implementations for different databases.
 
 ---
 
-### 2. Custom Serialization (Non-Pydantic Classes)
-
-If you use standard Python dataclasses, legacy classes, or custom serialization logic, you can explicitly provide the json_dumps and json_loads arguments.
-
-### Using Python Dataclasses
-
-```python
-from dataclasses import dataclass, asdict
-from typing import Any
-
-@dataclass
-class ConfigData(MutableMixin):
-    theme: str
-    retries: int
-
-def load_config(data: dict[str, Any]) -> ConfigData:
-    return ConfigData(**data)
-
-# Usage in SQLAlchemy model
-# ...
-settings: Mapped[ConfigData] = mapped_column(
-    ModelType(
-        ConfigData,
-        json_dumps=asdict,      # Standard library function
-        json_loads=load_config  # Custom loader function
-        )
-    )
-)
-```
-
-### 3. High-Performance Usage (`LazyMutableMixin`)
+### 2. High-Performance Usage (`LazyMutableMixin`)
 
 **Recommended for read-heavy applications.**
 Objects are initialized "lazily". The overhead of change tracking is only paid when you actually access the attribute.
@@ -213,7 +176,37 @@ class UserSettings(LazyMutableMixin, BaseModel):
 
 `sqlatypemodel` isn't just for Pydantic. It supports any Python class, provided you configure it correctly.
 
-### 1. Attrs (⚠️ Common Pitfall)
+### 1. Python Dataclasses (Native Support)
+
+Standard dataclasses are unsafe for mutable tracking in Python 3.12+ because `__eq__` compares values (crashing recursion during initialization) and `__hash__` is generated based on values (breaking tracking).
+
+We provide a **safe wrapper** that enforces Identity Hashing and Equality.
+
+```python
+from dataclasses import asdict
+from typing import Any
+from sqlatypemodel import MutableMixin, ModelType
+# ✅ Use this import instead of the standard library
+from sqlatypemodel.util.dataclasses import dataclass 
+
+@dataclass
+class DataConfig(MutableMixin):
+    host: str
+    port: int
+    meta: dict[str, Any]
+
+# SQLAlchemy Mapping
+col: Mapped[DataConfig] = mapped_column(
+    ModelType(
+        DataConfig,
+        json_dumps=asdict,
+        json_loads=lambda d: DataConfig(**d)
+    )
+)
+
+```
+
+### 2. Attrs (⚠️ Common Pitfall)
 
 **Critical:** You **must** disable slots and value-based equality.
 
@@ -225,7 +218,7 @@ We provide a helper to enforce this:
 ```python
 from attrs import asdict
 from sqlatypemodel import MutableMixin, ModelType
-# Use our helper to ensure safety
+# ✅ Use our helper to ensure safety
 from sqlatypemodel.util.attrs import define 
 
 @define 
@@ -239,54 +232,6 @@ col = mapped_column(
         AttrsConfig,
         json_dumps=asdict,
         json_loads=lambda d: AttrsConfig(**d)
-    )
-)
-
-```
-
-### 2. Python Dataclasses
-
-We automatically patch `__hash__` for dataclasses to ensure tracking works.
-
-```python
-class ForceHashMixin:
-    """Mixin to enforce object identity hashing.
-
-    This ensures that objects can be used in weak references even if their
-    default hashing behavior is modified or disabled (e.g., by Pydantic).
-    """
-
-    __hash__ = object.__hash__
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
-        """Ensure __hash__ is set to identity hash upon creation.
-
-        Args:
-            *args: Positional arguments for instance creation.
-            **kwargs: Keyword arguments for instance creation.
-
-        Returns:
-            A new instance of the class.
-        """
-        if getattr(cls, "__hash__", None) is None:
-            cls.__hash__ = ForceHashMixin.__hash__
-        return super().__new__(cls)
-```
-
-```python
-from dataclasses import dataclass, asdict
-
-@dataclass
-class DataConfig(MutableMixin):
-    host: str
-    port: int
-
-# SQLAlchemy Mapping
-col: Mapped[DataConfig] = mapped_column(
-    ModelType(
-        DataConfig,
-        json_dumps=asdict,
-        json_loads=lambda d: DataConfig(**d)
     )
 )
 
@@ -318,7 +263,6 @@ col: Mapped[VanillaConfig] = mapped_column(
 
 ---
 
-
 ## 🔧 Under the Hood: Architecture
 
 ### 1. `orjson` Power
@@ -340,29 +284,7 @@ engine = create_async_engine("postgresql+asyncpg://...")
 
 ```
 
-You also can manually create engine and provide our json serializers
-
-
-```python
-from sqlalchemy import create_engine
-from sqlatypemodel.util.json import get_serializers
-
-dumps, loads = get_serializers(use_orjson=True)
-
-engine = create_engine("postgresql://user:pass@localhost/db", json_serializer=dumps, json_deserializer=loads)
-```
-
----
-
-## 🧠 Under the Hood: How it Works
-
-Understanding the magic helps you design better applications.
-
-### The "Proxy" Pattern
-
-When you assign a `list` or `dict` to a model, `sqlatypemodel` intercepts it and wraps it in a `MutableList` or `MutableDict`. These wrappers look and behave exactly like standard lists/dicts, but they have a hidden link to their parent.
-
-### Logic Flow: Change Tracking (The "Bubble Up" Effect)
+### 3. Logic Flow: Change Tracking (The "Bubble Up" Effect)
 
 When you modify a deeply nested list, the signal bubbles up to SQLAlchemy.
 
@@ -395,29 +317,7 @@ User Code:  user.settings.tags.append("new")
 
 ```
 
-### Logic Flow: Lazy Loading vs. Eager Loading
-
-How data travels from the Database to your Code.
-
-#### **Eager (`MutableMixin`)**
-
-```text
-[DB JSON] -> [json.loads] -> [Raw Dict]
-                                 |
-                                 v
-                          [__init__ / _restore_tracking]
-                                 |
-                          (Heavy Recursive Scan)
-                                 |
-                          [Wraps EVERYTHING immediately]
-                                 |
-User Code <-------------- [Fully Wrapped Object]
-
-```
-
-*Pros:* Fast reads. *Cons:* Slow load time for large objects.
-
-#### **Lazy (`LazyMutableMixin`)**
+### 4. Logic Flow: Lazy Loading (`LazyMutableMixin`)
 
 ```text
 [DB JSON] -> [json.loads] -> [Raw Dict]
@@ -437,87 +337,21 @@ User Code <-------------- [Object with Raw Dict in __dict__]
 
 ```
 
-*Pros:* Instant load time. *Cons:* Tiny overhead on first access.
-
 ---
 
-## 🔍 Internal Code Peek
-
-To understand the magic, look at how we handle attribute access in **Lazy Loading** (`mixin.py`):
-
-```python
-# Simplified logic from sqlatypemodel/mixin/mixin.py
-class LazyMutableMixin(BaseMutableMixin):
-    def __getattribute__(self, name: str) -> Any:
-        # 1. Get the actual value from memory
-        value = object.__getattribute__(self, name)
-
-        # 2. Check if it's a raw dict/list that hasn't been wrapped yet
-        if is_mutable_and_untracked(value):
-            # 3. Wrap it (Create MutableList/Dict and link parent)
-            wrapped = wrap_mutable(self, value, key=name)
-            
-            # 4. Save it back so next time it's fast
-            object.__setattr__(self, name, wrapped)
-            return wrapped
-
-        return value
-
-```
-
----
-
-## ⚠️ Important Caveats & Limitations
+## ⚠️ Important Caveats
 
 ### 1. Identity Hashing (Crucial)
 
 To track changes, `MutableMixin` **must** be able to use your objects as keys in a `WeakKeyDictionary`. This requires the object to be hashable based on its **Identity** (memory address), not its content.
 
-* **Rule:** Two `UserSettings` objects with the exact same data are **NOT** equal and have different hashes.
+* **Rule:** Two `UserSettings` objects with the exact same data are **NOT** equal (`a != b`) and have different hashes.
 * **Implication:** Do not use these models as keys in a `dict` if you rely on value equality.
 
 ### 2. 64-bit Integer Limit
 
 `orjson` (Rust) is strict. It supports signed 64-bit integers (`-9,223,372,036,854,775,808` to `9,223,372,036,854,775,807`).
-
-* **Risk:** If you try to save a Python `int` larger than this, a `SerializationError` will be raised.
-
-So, we implemented fallback to python's standard json library, and when orjson serialization raises an exception we will try to use the standard library
-
-```python
-def _orjson_dumps_wrapper(obj: Any) -> str:
-    """
-    Attempt orjson serialization, fallback to standard json on failure.
-    Handles:
-    1. Integer overflow (int > 64 bit) -> Fallback
-    2. Unknown types (TypeError) -> Fallback
-    """
-    try:
-        return orjson.dumps(obj).decode("utf-8")
-    except (orjson.JSONEncodeError, TypeError, OverflowError):
-        return _std_dumps(obj)
-
-
-def _orjson_loads_wrapper(data: str | bytes) -> Any:
-    """
-    Attempt orjson deserialization, fallback to standard json on failure.
-    Useful if data in DB was saved via standard json (e.g. huge integers).
-    """
-    try:
-        return orjson.loads(data)
-    except (orjson.JSONDecodeError, TypeError, ValueError):
-        if isinstance(data, bytes):
-            data = data.decode("utf-8")
-        return json.loads(data)
-
-```
-
-### 3. Attrs & Slots
-
-As mentioned, `attrs` defaults to `slots=True`.
-
-* **Risk:** If you forget `slots=False`, you will get `AttributeError: 'MyModel' object has no attribute '_parents_store'`.
-* **Fix:** Always use `@define(slots=False)`.
+If you try to save a Python `int` larger than this, the library automatically falls back to the standard `json` library, ensuring data safety at the cost of performance for that specific record.
 
 ---
 
