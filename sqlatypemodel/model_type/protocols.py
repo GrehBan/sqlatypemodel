@@ -24,11 +24,10 @@ Example:
 
 from __future__ import annotations
 
-from typing import Any, Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 __all__ = (
     "PydanticModelProtocol",
-    "PT",
 )
 
 
@@ -101,8 +100,3 @@ class PydanticModelProtocol(Protocol):
             'light'
         """
         ...
-
-"""Interfaces to break circular dependencies."""
-
-
-PT = TypeVar("PT", bound=PydanticModelProtocol)

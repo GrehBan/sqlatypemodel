@@ -46,7 +46,7 @@ class DBStateMachine(RuleBasedStateMachine):
     def teardown(self) -> None:
         self.session.close()
         self.engine.dispose()
-        super().teardown()
+        super().teardown() # type: ignore[no-untyped-call]
 
     entities = Bundle("entities")
 

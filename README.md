@@ -4,24 +4,27 @@
 [![PyPI version](https://badge.fury.io/py/sqlatypemodel.svg)](https://badge.fury.io/py/sqlatypemodel)
 [![Python versions](https://img.shields.io/pypi/pyversions/sqlatypemodel.svg)](https://pypi.org/project/sqlatypemodel/)
 
-
 # Typed JSON fields for SQLAlchemy with automatic mutation tracking
 
 **sqlatypemodel** solves the "immutable JSON" problem in SQLAlchemy. It allows you to use strictly typed Python objects (**Pydantic**, **Dataclasses**, **Attrs**) as database columns while ensuring that **every change—no matter how deep—is automatically saved.**
 
-Powered by **`orjson`** for blazing-fast performance and featuring a **Lazy Loading** architecture for instant database reads.
+Powered by **`orjson`** for blazing-fast performance and featuring a **State-Based Architecture** for universal compatibility.
 
 ---
 
 ## ✨ Key Features
 
-* **🐢 -> 🐇 Lazy Loading (v0.7.0):**
+* **🏗️ State-Based Tracking (v0.8.0):**
+  * **Universal Compatibility:** Works natively with **unhashable** objects (e.g., standard Pydantic models, `eq=True` Dataclasses).
+  * **Zero Monkey-Patching:** No longer alters your class's `__hash__` or `__eq__` methods. Uses internal `MutableState` tokens for safe identity tracking.
+
+* **🐢 -> 🐇 Lazy Loading:**
   * **Zero-cost loading:** Objects loaded from the DB are raw Python dicts until you access them.
   * **JIT Wrapping:** Wrappers are created Just-In-Time. Loading 5,000 objects takes **~7ms** instead of **~1.1s**.
 
 * **🥒 Pickle & Celery Ready:**
   * Full support for `pickle`. Pass your database models directly to **Celery** workers or cache them in **Redis**.
-  * Tracking is automatically restored upon deserialization.
+  * Tracking is automatically restored upon deserialization via `MutableMethods`.
 
 * **🚀 High Performance:**
   * **Powered by `orjson`:** 10x-50x faster serialization than standard `json`.
@@ -31,8 +34,6 @@ Powered by **`orjson`** for blazing-fast performance and featuring a **Lazy Load
 * **🔄 Deep Mutation Tracking:**
   * Detects changes like `user.settings.tags.append("new")` automatically.
   * No more `flag_modified()` or reassigning the whole object.
-
-* **Universal Support:** Works with Pydantic (V1 & V2), Dataclasses, Attrs, and Plain classes.
 
 ---
 
@@ -125,28 +126,21 @@ with Session(engine) as session:
 
 ### 🔧 Internal Magic:
 
-The library uses `__init_subclass__` to automate the connection between your models and the SQLAlchemy `ModelType`. When you inherit from `BaseMutableMixin` (or its derivatives), the library automatically handles registration.
+The library uses `__init_subclass__` to automate the connection between your models and the SQLAlchemy `ModelType`.
 
 ```python
-class BaseMutableMixin(serialization.ForceHashMixin, Mutable, abc.ABC):
+class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        # Our internal flags:
-        auto_register = kwargs.pop("auto_register", True) # Default: True
-        associate_cls = kwargs.pop("associate", None)     # Link to custom ModelType
-
-        if auto_register and not inspect.isabstract(cls):
-             # Automatically calls ModelType.register_mutable(cls)
-             from sqlatypemodel.model_type import ModelType
-
-             associate = associate_cls or ModelType
-             associate.register_mutable(cls)
+        # Automatically calls ModelType.register_mutable(cls)
+        from sqlatypemodel.model_type import ModelType
+        ModelType.register_mutable(cls)
 
 ```
 
 **What this means for you:**
 
 * **Zero Configuration:** Just inherit, and the model is ready for tracking.
-* **`auto_register=False`**: Use this flag if you want to define a base class for your models but don't want it globally registered yet.
+* **Unhashable Models OK:** Your models don't need to be hashable. The library assigns a unique `_state` token to every instance to track relationships safely.
 
 ---
 
@@ -174,19 +168,19 @@ class UserSettings(LazyMutableMixin, BaseModel):
 
 ## 🛠 Advanced Support: Attrs, Dataclasses, Plain Classes
 
-`sqlatypemodel` isn't just for Pydantic. It supports any Python class, provided you configure it correctly.
+`sqlatypemodel` isn't just for Pydantic. It supports any Python class.
 
-### 1. Python Dataclasses (Native Support)
+### 1. Python Dataclasses
 
-Standard dataclasses are unsafe for mutable tracking in Python 3.12+ because `__eq__` compares values (crashing recursion during initialization) and `__hash__` is generated based on values (breaking tracking).
+In v0.8.0+, standard dataclasses work out of the box, even if they are unhashable (`eq=True, frozen=False`).
 
-We provide a **safe wrapper** that enforces Identity Hashing and Equality.
+However, for deep recursion safety during initialization on Python 3.12+, we still recommend our safe wrapper:
 
 ```python
 from dataclasses import asdict
 from typing import Any
 from sqlatypemodel import MutableMixin, ModelType
-# ✅ Use this import instead of the standard library
+# ✅ Safe wrapper (prevents recursion loops during init)
 from sqlatypemodel.util.dataclasses import dataclass 
 
 @dataclass
@@ -206,20 +200,13 @@ col: Mapped[DataConfig] = mapped_column(
 
 ```
 
-### 2. Attrs (⚠️ Common Pitfall)
+### 2. Attrs
 
-**Critical:** You **must** disable slots and value-based equality.
-
-* `slots=False`: The library needs `__dict__` to inject tracking metadata.
-* `eq=False`: We use Identity Hashing. Standard equality breaks tracking.
-
-We provide a helper to enforce this:
+Standard `attrs` classes are fully supported.
 
 ```python
-from attrs import asdict
+from attrs import asdict, define
 from sqlatypemodel import MutableMixin, ModelType
-# ✅ Use our helper to ensure safety
-from sqlatypemodel.util.attrs import define 
 
 @define 
 class AttrsConfig(MutableMixin):
@@ -237,56 +224,21 @@ col = mapped_column(
 
 ```
 
-### 3. Plain Python Classes
-
-You can even use raw Python classes.
-
-```python
-class VanillaConfig(MutableMixin):
-    def __init__(self, key: str, value: int):
-        self.key = key
-        self.value = value
-
-    def to_dict(self):
-        return {"key": self.key, "value": self.value}
-
-# SQLAlchemy Mapping
-col: Mapped[VanillaConfig] = mapped_column(
-    ModelType(
-        VanillaConfig,
-        json_dumps=lambda o: o.to_dict(),
-        json_loads=lambda d: VanillaConfig(**d)
-    )
-)
-
-```
-
 ---
 
 ## 🔧 Under the Hood: Architecture
 
-### 1. `orjson` Power
+### 1. State-Based Tracking (The "Safe" Way)
 
-We use `orjson` for serialization. It is ~50x faster than `json` and supports types that normally break standard serializers: `datetime`, `UUID`, `numpy` arrays, and `dataclasses`.
+Unlike other libraries that require your objects to be hashable (often breaking Pydantic/Dataclasses), `sqlatypemodel` attaches a lightweight **State Token** (`MutableState`) to every tracked object.
 
-### 2. Utilities: Easy Engine Configuration
+* **Parent** holds the `_state` token strongly.
+* **Children** track their parents via `WeakKeyDictionary[_state, attribute_name]`.
+* **Result**: Robust tracking that survives Garbage Collection race conditions and works with *any* Python object.
 
-To use the full power of `sqlatypemodel`, your SQLAlchemy Engine must be configured to use `orjson`. We provide helpers to do this automatically:
+### 2. Logic Flow: Change Tracking (The "Bubble Up" Effect)
 
-```python
-from sqlatypemodel.util.sqlalchemy import create_engine, create_async_engine
-
-# Sync (SQLite, Postgres, etc.)
-engine = create_engine("postgresql://user:pass@localhost/db")
-
-# Async (asyncpg, aiosqlite)
-engine = create_async_engine("postgresql+asyncpg://...")
-
-```
-
-### 3. Logic Flow: Change Tracking (The "Bubble Up" Effect)
-
-When you modify a deeply nested list, the signal bubbles up to SQLAlchemy.
+When you modify a deeply nested list, the signal bubbles up to SQLAlchemy using these tokens.
 
 ```text
 User Code:  user.settings.tags.append("new")
@@ -299,16 +251,15 @@ User Code:  user.settings.tags.append("new")
                       v
 [Logic]     sqlatypemodel.events.safe_changed()
                       |
-            1. Looks up `self._parents` (WeakKeyDictionary)
-            2. Finds parent object: UserSettings
+            1. Iterates `self._parents` (WeakKeyDictionary)
+            2. Resolves `MutableState` -> Parent Object (UserSettings)
                       |
                       v
 [Parent]    UserSettings.changed()
                       |
             (triggers safe_changed() recursively)
                       |
-            1. Looks up `self._parents`
-            2. Finds parent object: User (SQLAlchemy Model)
+            1. Resolves `MutableState` -> Parent Object (User Entity)
                       |
                       v
 [Root]      SQLAlchemy Model (User)
@@ -317,41 +268,18 @@ User Code:  user.settings.tags.append("new")
 
 ```
 
-### 4. Logic Flow: Lazy Loading (`LazyMutableMixin`)
-
-```text
-[DB JSON] -> [json.loads] -> [Raw Dict]
-                                 |
-                                 v
-User Code <-------------- [Object with Raw Dict in __dict__]
-                                 |
-                          (User accesses .data)
-                                 |
-                          [__getattribute__ Intercept]
-                                 |
-                          1. Is it raw? -> Yes.
-                          2. Wrap it NOW (Just-In-Time).
-                          3. Update __dict__ with wrapper.
-                                 |
-                          [Return Wrapped Object]
-
-```
-
 ---
 
 ## ⚠️ Important Caveats
 
-### 1. Identity Hashing (Crucial)
-
-To track changes, `MutableMixin` **must** be able to use your objects as keys in a `WeakKeyDictionary`. This requires the object to be hashable based on its **Identity** (memory address), not its content.
-
-* **Rule:** Two `UserSettings` objects with the exact same data are **NOT** equal (`a != b`) and have different hashes.
-* **Implication:** Do not use these models as keys in a `dict` if you rely on value equality.
-
-### 2. 64-bit Integer Limit
+### 1. 64-bit Integer Limit
 
 `orjson` (Rust) is strict. It supports signed 64-bit integers (`-9,223,372,036,854,775,808` to `9,223,372,036,854,775,807`).
 If you try to save a Python `int` larger than this, the library automatically falls back to the standard `json` library, ensuring data safety at the cost of performance for that specific record.
+
+### 2. Mixed Types in Collections
+
+While supported, avoid mixing complex mutable types in the same list (e.g., `[MyModel(), {"key": "val"}]`) if you can. It works, but the "Lazy" loading mechanism has to infer types at runtime, which is slightly slower than uniform lists.
 
 ---
 

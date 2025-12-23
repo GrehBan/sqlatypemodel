@@ -1,6 +1,5 @@
 import weakref
-
-from typing import Any, TypeVar, Generic
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -33,7 +32,7 @@ class MutableState(Generic[T]):
         return self.ref()
     
     @classmethod
-    def wrap(cls: type[MutableState[T]], parent: T) -> MutableState:
+    def wrap(cls: type["MutableState[T]"], parent: T) -> "MutableState[T]":
         return cls(
             ref=weakref.ref(parent),
         )

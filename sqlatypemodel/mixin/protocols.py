@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable, TypeVar
+from typing import Any, Protocol, TypeVar, cast, runtime_checkable
 from weakref import WeakKeyDictionary
 
 from sqlatypemodel.mixin import events
@@ -44,15 +44,18 @@ class Trackable(Protocol):
 
 class MutableMethods:
     @property
-    def _parents(self) -> WeakKeyDictionary[MutableState, Any]:
+    def _parents(self) -> WeakKeyDictionary[MutableState[Any], Any]:
         """Retrieve or initialize the parents WeakKeyDictionary."""
 
         try:
-            return object.__getattribute__(self, "_parents_store")
+            return cast(
+                "WeakKeyDictionary[MutableState[Any], Any]",
+                object.__getattribute__(self, "_parents_store")
+            )
         except AttributeError:
-            val = WeakKeyDictionary()
+            val: WeakKeyDictionary[MutableState[Any], Any] = WeakKeyDictionary()
             object.__setattr__(self, "_parents_store", val)
-        return val
+            return val
 
     @property
     def _state(self: T) -> MutableState[T]:
@@ -62,13 +65,17 @@ class MutableMethods:
         """
 
         try:
-            return object.__getattribute__(self, "_state_inst")
+            return cast(
+                MutableState[T],
+                object.__getattribute__(self, "_state_inst")
+            )
         except AttributeError:
             val = MutableState.wrap(self)
             object.__setattr__(self, "_state_inst", val)
-        return val
+            return val
 
 
     def changed(self) -> None:
         """Notify parents using the library's safe propagation logic."""
-        events.safe_changed(self)
+        # self is not explicitly Trackable in this mixin, but will be at runtime
+        events.safe_changed(cast(Trackable, self))

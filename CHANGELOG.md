@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2025-12-23
+
+A **major architectural release** that eliminates the need for hashable models, fixes critical garbage collection race conditions, and achieves 100% strict type safety.
+
+### 🏗️ State-Based Architecture (Major Change)
+
+- **MutableState Token System**:
+  - **The Problem**: Previous versions relied on `ForceHashMixin` to make mutable objects (like Pydantic models) hashable for tracking. This was fragile and conflicted with libraries that enforce `eq=True, frozen=False`.
+  - **The Solution**: Introduced `MutableState`. Each parent object now holds a unique, immutable identity token (`_state`). Children track their parents via this token in a `WeakKeyDictionary`.
+  - **Benefit**: **Zero Monkey-Patching**. You can now use standard unhashable Python objects as parents without `ForceHashMixin`.
+
+- **Inverted Ownership (GC Fix)**:
+  - Fixed a critical race condition where tracking links could be garbage-collected prematurely.
+  - **Logic**: The **Parent** now strongly holds its own `_state` token. The **Child** holds a weak reference to that token in `_parents`. The link now persists exactly as long as the parent is alive.
+
+### 🛡️ Type Safety & Stability
+
+- **Strict Typing (`mypy --strict`)**:
+  - The codebase now passes `mypy --strict` checks.
+  - Added generic type parameters to `MutableState[T]` and `ModelType[T]` for better IDE autocompletion and static analysis support.
+
+- **SQLAlchemy Compatibility**:
+  - Fixed `AttributeError: 'InstanceState' object has no attribute '_sa_instance_state'` in `safe_changed`. The event propagator now correctly distinguishes between our internal `MutableState` and SQLAlchemy's `InstanceState`.
+
+### 💥 Breaking Changes
+
+- **Removed `ForceHashMixin`**: This mixin has been removed as it is no longer necessary. If your code relied on it for custom hashing, please migrate to standard Python hashing or use the new `MutableState` identity system.
+- **Internal API**: `_parents` is now a `WeakKeyDictionary` mapping `MutableState` -> `str` (attribute name), instead of `Parent Object` -> `str`.
+
 ## [0.7.0] - 2025-12-22
 
 A **monumental release** rewriting the core architecture. This version introduces **Lazy Loading** (up to 150x faster reads), **Graph Isomorphism** support for circular references, production-grade **Pickle stability**, and robust support for Python Dataclasses on Python 3.12+.

@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import types
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from sqlalchemy.ext.mutable import MutableDict, MutableList, MutableSet
 
 from sqlatypemodel.mixin import events, inspection
+from sqlatypemodel.mixin.protocols import Trackable
+from sqlatypemodel.mixin.state import MutableState
 from sqlatypemodel.mixin.types import (
     KeyableMutableDict,
     KeyableMutableList,
     KeyableMutableSet,
 )
-from sqlatypemodel.mixin.state import MutableState
 from sqlatypemodel.util import constants
-from sqlatypemodel.mixin.protocols import Trackable
 
 
 def get_or_create_state(parent: Any) -> MutableState[Any]:
@@ -224,6 +224,6 @@ def scan_and_wrap_fields(parent: Any, _seen: Any | None = None) -> None:
                 wrapped._parents[state] = attr_name
 
             if hasattr(wrapped, "_restore_tracking"):
-                wrapped._restore_tracking(_seen=_seen) # type: ignore
+                wrapped._restore_tracking(_seen=_seen)
         except Exception:
             pass

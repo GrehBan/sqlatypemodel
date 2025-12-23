@@ -1,7 +1,6 @@
 """Tests for third-party types (attrs, dataclasses)."""
 
-import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
@@ -12,7 +11,7 @@ from sqlatypemodel.mixin.protocols import Trackable
 try:
     from attrs import define as attrs_define
 except ImportError:
-    attrs_define = None
+    attrs_define: Any = None # type: ignore [no-redef]
 
 
 @dataclass
@@ -65,9 +64,7 @@ class TestAttrsSupport:
 
         model = AttrsEqModel(id=1)
         
-        # Model itself raises TypeError on hash (standard behavior for eq=True frozen=False)
         with pytest.raises(TypeError):
             hash(model)
             
-        # But its state MUST be hashable
         assert isinstance(hash(model._state), int)

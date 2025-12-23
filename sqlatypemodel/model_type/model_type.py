@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Dialect
 
 from sqlatypemodel.exceptions import DeserializationError, SerializationError
-from sqlatypemodel.model_type.protocols import PT, PydanticModelProtocol
+from sqlatypemodel.model_type.protocols import PydanticModelProtocol
 from sqlatypemodel.util.json import get_serializers
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 __all__ = ("ModelType",)
 
-T = TypeVar("T", PydanticModelProtocol, Any)
+T = TypeVar("T", bound=PydanticModelProtocol)
 logger = logging.getLogger(__name__)
 
 
@@ -57,14 +57,14 @@ class ModelType(sa.types.TypeDecorator[T], Generic[T]):
                         cannot be resolved.
         """
         super().__init__(*args, **kwargs)
-        self.model = model
+        self.model: type[T] = model
 
         self._json_dumps_str, self._json_loads_str = get_serializers()
 
         is_pydantic = self._is_pydantic_compatible(model)
 
         if json_dumps is not None:
-            self.dumps = json_dumps
+            self.dumps: Callable[[T], dict[str, Any]] = json_dumps
         elif is_pydantic:
             self.dumps = self._create_pydantic_dumps()
         else:
@@ -74,10 +74,10 @@ class ModelType(sa.types.TypeDecorator[T], Generic[T]):
             )
 
         if json_loads is not None:
-            self.loads = json_loads
+            self.loads: Callable[[dict[str, Any]], T] = json_loads
         elif is_pydantic:
             self.loads = cast(
-                Callable[[dict[str, Any]], PT], model.model_validate
+                Callable[[dict[str, Any]], T], model.model_validate
             )
         else:
             raise ValueError(
@@ -90,14 +90,14 @@ class ModelType(sa.types.TypeDecorator[T], Generic[T]):
         """Return the Python type associated with this type."""
         return self.model
 
-    def _create_pydantic_dumps(self) -> Callable[[PT], dict[str, Any]]:
+    def _create_pydantic_dumps(self) -> Callable[[T], dict[str, Any]]:
         """Create a generic dumps function for Pydantic models.
 
         Returns:
             A callable converting the model to a dict.
         """
 
-        def dumps(obj: PT) -> dict[str, Any]:
+        def dumps(obj: T) -> dict[str, Any]:
             return obj.model_dump(mode="json")
 
         return dumps

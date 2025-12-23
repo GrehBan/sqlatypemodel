@@ -28,6 +28,7 @@ class TestBatching:
 
     def setup_db(self, session: Session) -> BatchEntity:
         """Create the table and a test row."""
+        assert session.bind is not None
         BatchBase.metadata.create_all(session.bind)
         
         obj = BatchEntity(model=BatchModel())

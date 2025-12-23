@@ -5,12 +5,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from sqlalchemy.orm import attributes
 from sqlalchemy.exc import InvalidRequestError
+from sqlalchemy.orm import attributes
 
 from sqlatypemodel.mixin.protocols import Trackable
 from sqlatypemodel.mixin.state import MutableState
-from sqlatypemodel.util import constants
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +92,7 @@ def safe_changed(
                 if instance is not None and key:
                     flag_modified(instance, key)
                 continue 
-            except Exception:
+            except Exception as e:
                 logger.error("Error flagging modified on SA model: %s", e)
                 failure_count += 1
                 continue
@@ -101,7 +100,7 @@ def safe_changed(
         if key:
             try:
                 flag_modified(parent, key)
-            except InvalidRequestError:
+            except InvalidRequestError as e:
                 logger.error("Error flagging modified on SA model: %s", e)
                 failure_count += 1
                 pass

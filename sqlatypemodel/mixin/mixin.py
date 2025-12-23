@@ -34,7 +34,7 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
     _max_nesting_depth: int = constants.DEFAULT_MAX_NESTING_DEPTH
     _change_suppress_level: int = 0
     _pending_change: bool = False
-    _state: MutableState["BaseMutableMixin"]
+    _state: MutableState[BaseMutableMixin]
     
     _parents_store: WeakKeyDictionary[Any, Any]
 
@@ -69,7 +69,7 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
     def changed(self) -> None:
         """Notify observers that this object has changed."""
         if not events.mark_change_or_defer(self):
-            return
+            return None
         return super().changed()
 
     def batch_changes(self) -> AbstractContextManager[None]:
