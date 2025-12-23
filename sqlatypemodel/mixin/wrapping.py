@@ -13,10 +13,38 @@ from sqlatypemodel.mixin.types import (
     KeyableMutableList,
     KeyableMutableSet,
 )
+from sqlatypemodel.mixin.state import MutableState
 from sqlatypemodel.util import constants
+from sqlatypemodel.mixin.protocols import Trackable
 
-if TYPE_CHECKING:
-    from sqlatypemodel.mixin.protocols import Trackable
+
+def get_or_create_state(parent: Any) -> MutableState[Any]:
+    """Retrieves or creates a MutableState identity token for the given parent.
+
+    This function ensures that a unique `MutableState` object exists for the
+    parent instance. This state object represents the parent's identity in the
+    change tracking graph and is used as a key in children's parent references.
+
+    It attempts to store the state in the `_state` attribute. If that attribute
+    is already defined (e.g., as a property in a protocol or mixin), it falls
+    back to storing it in `_state_inst` to avoid conflicts.
+
+    Args:
+        parent: The object (e.g., Pydantic model, list, or dict) for which to
+            retrieve or create the state.
+
+    Returns:
+        The MutableState wrapper associated with the parent object.
+    """
+    state = getattr(parent, "_state", None)
+    if state is None:
+        state = MutableState.wrap(parent)
+        if hasattr(parent, "_state"):
+            key = "_state_inst"
+        else:
+            key = "_state"
+        object.__setattr__(parent, key, state)
+    return state
 
 
 def wrap_mutable(
@@ -45,11 +73,13 @@ def wrap_mutable(
         _seen = {}
 
     obj_id = id(value)
-    
+
+    state = get_or_create_state(parent)
+
     if obj_id in _seen:
         wrapped = _seen[obj_id]
         if hasattr(wrapped, "_parents"):
-            wrapped._parents[parent] = key
+            wrapped._parents[state] = key
         return wrapped
 
     max_depth = getattr(
@@ -68,7 +98,7 @@ def wrap_mutable(
              value.changed = types.MethodType(events.safe_changed, value) # type: ignore
         
         if hasattr(value, "_parents"):
-             value._parents[parent] = key
+             value._parents[state] = key
         return value
 
     value_type = type(value)
@@ -86,7 +116,8 @@ def _wrap_trackable(
     parent: Any, value: Trackable, _seen: dict[int, Any], depth: int, key: Any
 ) -> Trackable:
     """Wrap a trackable object and scan its children."""
-    value._parents[parent] = key
+    state = get_or_create_state(parent)
+    value._parents[state] = key
 
     attrs = inspection.extract_attrs_to_scan(value)
     value_cls = type(value)
@@ -111,7 +142,8 @@ def _wrap_list(
     
     _seen[id(value)] = wrapped
     
-    wrapped._parents[parent] = key
+    state = get_or_create_state(parent)
+    wrapped._parents[state] = key
 
     for i, item in enumerate(wrapped):
         new_val = wrap_mutable(wrapped, item, _seen, depth, key=i)
@@ -128,7 +160,9 @@ def _wrap_dict(
     wrapped: KeyableMutableDict[Any, Any] = KeyableMutableDict(value)
     
     _seen[id(value)] = wrapped
-    wrapped._parents[parent] = key
+    
+    state = get_or_create_state(parent)
+    wrapped._parents[state] = key
 
     for k, v in list(wrapped.items()):
         new_val = wrap_mutable(wrapped, v, _seen, depth, key=k)
@@ -145,7 +179,9 @@ def _wrap_set(
     wrapped: KeyableMutableSet[Any] = KeyableMutableSet()
     
     _seen[id(value)] = wrapped
-    wrapped._parents[parent] = key
+    
+    state = get_or_create_state(parent)
+    wrapped._parents[state] = key
 
     for item in value:
         wrapped.add(wrap_mutable(wrapped, item, _seen, depth, key=None))
@@ -184,7 +220,8 @@ def scan_and_wrap_fields(parent: Any, _seen: Any | None = None) -> None:
                 object.__setattr__(parent, attr_name, wrapped)
 
             if hasattr(wrapped, "_parents"):
-                wrapped._parents[parent] = attr_name
+                state = get_or_create_state(parent)
+                wrapped._parents[state] = attr_name
 
             if hasattr(wrapped, "_restore_tracking"):
                 wrapped._restore_tracking(_seen=_seen) # type: ignore

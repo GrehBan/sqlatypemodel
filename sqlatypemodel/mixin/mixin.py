@@ -11,8 +11,9 @@ from weakref import WeakKeyDictionary
 from sqlalchemy.ext.mutable import Mutable
 
 from sqlatypemodel.mixin import events, inspection, serialization, wrapping
-from sqlatypemodel.util import constants
 from sqlatypemodel.mixin.protocols import MutableMethods
+from sqlatypemodel.mixin.state import MutableState
+from sqlatypemodel.util import constants
 
 if TYPE_CHECKING:
     from sqlatypemodel.model_type import ModelType  # noqa: F401
@@ -24,12 +25,16 @@ logger = logging.getLogger(__name__)
 M = TypeVar("M", bound="BaseMutableMixin")
 
 
-class BaseMutableMixin(serialization.ForceHashMixin, MutableMethods, Mutable, abc.ABC):
-    """Abstract Base Class for Mutable Mixins."""
+class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
+    """Abstract Base Class for Mutable Mixins.
+    
+    Implements change tracking using State-based parent references.
+    """
 
     _max_nesting_depth: int = constants.DEFAULT_MAX_NESTING_DEPTH
     _change_suppress_level: int = 0
     _pending_change: bool = False
+    _state: MutableState["BaseMutableMixin"]
     
     _parents_store: WeakKeyDictionary[Any, Any]
 
@@ -103,7 +108,6 @@ class BaseMutableMixin(serialization.ForceHashMixin, MutableMethods, Mutable, ab
                     state.update(parent_state)
                     parent_handled = True
                 elif parent_state is not None:
-                    # Explicit cast/conversion for mypy
                     return dict(serialization.cleanup_pickle_state(parent_state))
             except Exception:
                 pass
@@ -114,7 +118,6 @@ class BaseMutableMixin(serialization.ForceHashMixin, MutableMethods, Mutable, ab
         return dict(serialization.cleanup_pickle_state(state))
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Set an attribute with automatic mutable wrapping and tracking."""
         if self._should_skip_attr(name):
             super().__setattr__(name, value)
             return
@@ -137,9 +140,10 @@ class BaseMutableMixin(serialization.ForceHashMixin, MutableMethods, Mutable, ab
 
         if wrapping.is_mutable_and_untracked(value):
             wrapped_value = wrapping.wrap_mutable(self, value, key=name)
+            
             if hasattr(wrapped_value, "_parents"):
-                # type ignore: we checked hasattr
-                wrapped_value._parents[self] = name # type: ignore[attr-defined]
+                wrapped_value._parents[self._state] = name
+            
             object.__setattr__(self, name, wrapped_value)
             if (
                 old_value is constants.MISSING
@@ -149,7 +153,7 @@ class BaseMutableMixin(serialization.ForceHashMixin, MutableMethods, Mutable, ab
             return
 
         if hasattr(value, "_parents"):
-            value._parents[self] = name # type: ignore[attr-defined]
+            value._parents[self._state] = name
             object.__setattr__(self, name, value)
 
             if (
@@ -167,9 +171,9 @@ class BaseMutableMixin(serialization.ForceHashMixin, MutableMethods, Mutable, ab
         ) or old_value is constants.MISSING:
             self.changed()
     
-    # ... coerce method ...
     @classmethod
     def coerce(cls: type[M], key: str, value: Any) -> M | None:
+        """Coerce value into the Mixin type."""
         if value is None:
             return None
         if isinstance(value, cls):
@@ -226,6 +230,7 @@ class LazyMutableMixin(BaseMutableMixin, auto_register=False):
             return value
 
         wrapped = wrapping.wrap_mutable(self, value, key=name)
+        
         if wrapped is not value:
             object.__setattr__(self, name, wrapped)
         return wrapped

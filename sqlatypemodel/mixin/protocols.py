@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable, TypeVar
 from weakref import WeakKeyDictionary
 
 from sqlatypemodel.mixin import events
+from sqlatypemodel.mixin.state import MutableState
 
-__all__ = ("Trackable",)
+__all__ = ("Trackable", "MutableMethods",)
+
+T = TypeVar("T", bound="Trackable")
 
 
 @runtime_checkable
@@ -21,8 +24,11 @@ class Trackable(Protocol):
     _pending_change: bool
 
     @property
-    def _parents(self) -> WeakKeyDictionary[Any, Any]: ...
+    def _parents(self: T) -> WeakKeyDictionary[MutableState[T], Any]: ...
     
+    @property
+    def _state(self: T) -> MutableState[T]: ...
+
     def changed(self) -> None:
         """Mark the object as changed and propagate the notification."""
         ...
@@ -38,7 +44,7 @@ class Trackable(Protocol):
 
 class MutableMethods:
     @property
-    def _parents(self) -> WeakKeyDictionary[Any, Any]:
+    def _parents(self) -> WeakKeyDictionary[MutableState, Any]:
         """Retrieve or initialize the parents WeakKeyDictionary."""
 
         try:
@@ -47,6 +53,21 @@ class MutableMethods:
             val = WeakKeyDictionary()
             object.__setattr__(self, "_parents_store", val)
         return val
+
+    @property
+    def _state(self: T) -> MutableState[T]:
+        """
+        Unique identity token for this object. 
+        Created lazily and stored strongly.
+        """
+
+        try:
+            return object.__getattribute__(self, "_state_inst")
+        except AttributeError:
+            val = MutableState.wrap(self)
+            object.__setattr__(self, "_state_inst", val)
+        return val
+
 
     def changed(self) -> None:
         """Notify parents using the library's safe propagation logic."""

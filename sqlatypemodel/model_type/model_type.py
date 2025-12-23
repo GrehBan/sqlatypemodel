@@ -19,11 +19,11 @@ if TYPE_CHECKING:
 
 __all__ = ("ModelType",)
 
-_T = TypeVar("_T")
+T = TypeVar("T", PydanticModelProtocol, Any)
 logger = logging.getLogger(__name__)
 
 
-class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
+class ModelType(sa.types.TypeDecorator[T], Generic[T]):
     """SQLAlchemy TypeDecorator for storing Pydantic models as JSON.
 
     Automatically handles:
@@ -37,9 +37,9 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
 
     def __init__(
         self,
-        model: type[PT],
-        json_dumps: Callable[[PT], dict[str, Any]] | None = None,
-        json_loads: Callable[[dict[str, Any]], PT] | None = None,
+        model: type[T],
+        json_dumps: Callable[[T], dict[str, Any]] | None = None,
+        json_loads: Callable[[dict[str, Any]], T] | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -86,7 +86,7 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
             )
 
     @property
-    def python_type(self) -> type[PT]:
+    def python_type(self) -> type[T]:
         """Return the Python type associated with this type."""
         return self.model
 
@@ -137,7 +137,7 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
 
     def process_bind_param(
         self,
-        value: PT | dict[str, Any] | None,
+        value: T | dict[str, Any] | None,
         dialect: Dialect,
     ) -> dict[str, Any] | None:
         """Convert Model to Dict for SQLAlchemy's JSON type.
@@ -170,7 +170,7 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
             raise SerializationError(self.model.__name__, e) from e
 
     def process_literal_param(
-        self, value: PT | None, dialect: Dialect
+        self, value: T | None, dialect: Dialect
     ) -> str:
         """Render value as a literal SQL string (for logs/debugging).
 
@@ -191,7 +191,7 @@ class ModelType(sa.types.TypeDecorator[PT], Generic[PT]):
         self,
         value: dict[str, Any] | str | bytes | None,
         dialect: Dialect,
-    ) -> PT | None:
+    ) -> T | None:
         """Convert DB value back to Model and restore tracking.
 
         Args:

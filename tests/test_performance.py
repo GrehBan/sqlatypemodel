@@ -24,7 +24,9 @@ class TestAssignmentPerformance:
 
         assert duration < 0.01, f"Assignment too slow: {duration:.4f}s"
         assert len(model.data) == size
-        assert model in large_list._parents
+        
+        # Fix: Check via state
+        assert model._state in large_list._parents
 
     def test_repeated_attribute_access_speed(self) -> None:
         """Benchmark overhead of __getattribute__ interception."""

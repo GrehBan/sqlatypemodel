@@ -50,6 +50,8 @@ _LIB_ATTRS: Final[frozenset[str]] = frozenset(
         "_change_suppress_level",
         "_pending_change",
         "_parents_store",
+        "_state_inst",
+        "_state"
     }
 )
 

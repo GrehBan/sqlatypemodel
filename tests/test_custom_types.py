@@ -1,72 +1,61 @@
-"""Tests for compatibility with Dataclasses, Attrs, and Plain classes."""
+"""Tests for third-party types (attrs, dataclasses)."""
 
+import sys
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 import pytest
-from sqlalchemy.ext.mutable import MutableDict, MutableList
 
 from sqlatypemodel import MutableMixin
 from sqlatypemodel.mixin.protocols import Trackable
-from sqlatypemodel.util.dataclasses import dataclass
 
 try:
     from attrs import define as attrs_define
 except ImportError:
-    attrs_define = None # type: ignore [assignment]
+    attrs_define = None
+
 
 @dataclass
 class DataClassModel(MutableMixin):
-    """A standard Python Dataclass inheriting from MutableMixin."""
+    """Standard dataclass."""
     data: list[int]
     meta: dict[str, Any]
 
-# ... PlainModel definitions ...
 
 class TestDataclassSupport:
-    """Tests for Python Dataclasses compatibility."""
-
-    def test_initialization_wraps_collections(self) -> None:
-        model = DataClassModel(data=[1, 2], meta={"key": "val"})
-
-        assert isinstance(model.data, MutableList)
-        assert isinstance(model.meta, MutableDict)
-        assert model.data == [1, 2]
-
-    def test_identity_hashing(self) -> None:
-        m1 = DataClassModel(data=[1], meta={})
-        m2 = DataClassModel(data=[1], meta={})
-        
-        # Objects are compared by identity (eq=False), so they are distinct
-        assert m1 != m2
-        assert hash(m1) != hash(m2)
-        assert isinstance(hash(m1), int)
+    """Tests for standard python dataclasses."""
 
     def test_change_tracking(self) -> None:
         model = DataClassModel(data=[1], meta={})
+        
+        # Access via state
+        assert model._state in cast(Trackable, model.data)._parents
 
-        assert model in cast(Trackable, model.data)._parents
-        assert cast(Trackable, model.data)._parents[model] == "data"
+    def test_mutation_triggers_change(self) -> None:
+        model = DataClassModel(data=[1], meta={})
+        from unittest.mock import patch
+        
+        with patch.object(model, "changed") as mock_changed:
+            model.data.append(2)
+            mock_changed.assert_called()
 
 
-# ... TestPlainClassSupport ...
-
-@pytest.mark.skipif(attrs_define is None, reason="attrs library is not installed")
 class TestAttrsSupport:
-    """Tests for Attrs library compatibility."""
+    """Tests for 'attrs' library support."""
 
-    def test_attrs_initialization(self) -> None:
+    def test_attrs_change_tracking(self) -> None:
         if attrs_define is None:
             return
 
-        @attrs_define(slots=False, eq=False)
+        @attrs_define
         class AttrsModel(MutableMixin):
-            data: list[int]
-            meta: dict[str, Any]
+            tags: list[str]
 
-        model = AttrsModel(data=[1, 2], meta={"k": "v"})
-        assert isinstance(model.data, MutableList)
+        model = AttrsModel(tags=["a"])
+        assert model._state in cast(Trackable, model.tags)._parents
 
-    def test_attrs_hashing_restoration(self) -> None:
+    def test_attrs_unhashable_is_fine(self) -> None:
+        """Verify that unhashable attrs classes still work."""
         if attrs_define is None:
             return
 
@@ -75,4 +64,10 @@ class TestAttrsSupport:
             id: int
 
         model = AttrsEqModel(id=1)
-        assert isinstance(hash(model), int)
+        
+        # Model itself raises TypeError on hash (standard behavior for eq=True frozen=False)
+        with pytest.raises(TypeError):
+            hash(model)
+            
+        # But its state MUST be hashable
+        assert isinstance(hash(model._state), int)

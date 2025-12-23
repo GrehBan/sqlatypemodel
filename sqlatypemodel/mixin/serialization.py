@@ -5,35 +5,6 @@ from typing import Any
 from sqlatypemodel.util import constants
 
 
-class ForceHashMixin:
-    """Mixin to enforce object identity hashing and equality.
-
-    This ensures that objects can be used in weak references even if their
-    default hashing behavior is modified or disabled (e.g., by Pydantic).
-    It also prevents attribute access during equality checks (via generated __eq__),
-    which can crash during initialization of Dataclasses.
-    """
-
-    __hash__ = object.__hash__
-    __eq__ = object.__eq__  # Force identity equality
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
-        """Ensure __hash__ is set to identity hash upon creation.
-
-        Args:
-            *args: Positional arguments for instance creation.
-            **kwargs: Keyword arguments for instance creation.
-
-        Returns:
-            A new instance of the class.
-        """
-        if getattr(cls, "__hash__", None) is None:
-            cls.__hash__ = ForceHashMixin.__hash__ # type: ignore [method-assign]
-        if getattr(cls, "__eq__", None) is None:
-            cls.__eq__ = ForceHashMixin.__eq__ # type: ignore [method-assign]
-        return super().__new__(cls)
-
-
 def cleanup_pickle_state(state: Any) -> Any:
     """Remove unpicklable attributes (like weakrefs) from the state dict.
 
@@ -84,6 +55,8 @@ def reset_trackable_state(instance: Any) -> None:
     """
     if hasattr(instance, "_parents_store"):
         delattr(instance, "_parents_store")
+    if hasattr(instance, "_state_inst"):
+        delattr(instance, "_state_inst")
 
     object.__setattr__(instance, "_change_suppress_level", 0)
     object.__setattr__(instance, "_pending_change", False)

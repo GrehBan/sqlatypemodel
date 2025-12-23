@@ -21,6 +21,7 @@ class TestLazyMixin:
 
         assert type(internal_storage) is dict
         assert internal_storage == raw_data
+        # Raw dict doesn't have _parents
         assert not hasattr(internal_storage, "_parents")
 
     def test_jit_wrapping_on_read(self) -> None:
@@ -31,7 +32,9 @@ class TestLazyMixin:
 
         assert isinstance(wrapped, MutableDict)
         assert wrapped == {"a": 1}
-        assert wrapped._parents[model] == "data"
+        
+        # Verify linkage via state
+        assert wrapped._parents[model._state] == "data"
 
         assert isinstance(model.__dict__["data"], MutableDict)
 
@@ -44,12 +47,13 @@ class TestLazyMixin:
 
         assert isinstance(model.items, MutableList)
         assert isinstance(model.__dict__["items"], MutableList)
-        assert model.items._parents[model] == "items"
+        assert model.items._parents[model._state] == "items"
 
     def test_change_notification_works_lazy(self) -> None:
         """Verify that modifying lazily loaded data triggers notifications."""
         model = LazyModel(data={"nested": {"x": 100}})
 
+        # Mocking 'changed' on the model itself
         with patch.object(model, "changed") as mock_changed:
             model.data["nested"]["x"] = 200
             
@@ -81,7 +85,7 @@ class TestLazyMixin:
     def test_pickle_restore_tracking(self) -> None:
         """Verify that tracking persists after pickling/unpickling."""
         original = LazyModel(data={"k": "v"})
-        _ = original.data
+        _ = original.data  # Trigger wrap
 
         restored = pickle.loads(pickle.dumps(original))
 

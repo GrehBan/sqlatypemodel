@@ -6,8 +6,11 @@ from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy.orm import attributes
+from sqlalchemy.exc import InvalidRequestError
 
 from sqlatypemodel.mixin.protocols import Trackable
+from sqlatypemodel.mixin.state import MutableState
+from sqlatypemodel.util import constants
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,10 @@ def safe_changed(
 
     Handles race conditions when the `_parents` dictionary is modified
     during iteration by using a snapshot-and-retry approach.
+    It supports multiple parent types:
+    1. MutableState (Our internal wrapper for any parent)
+    2. InstanceState (SQLAlchemy's wrapper for Entities)
+    3. Direct Objects (Nested Pydantic models or Entities)
 
     Args:
         self: The trackable instance that changed.
@@ -30,11 +37,11 @@ def safe_changed(
     if not hasattr(self, "_parents"):
         return
 
-    parents_snapshot: tuple[tuple[Any, str | None], ...] | None = None
+    parents_snapshot: list[tuple[Any, Any]] | None = None
 
     for retry in range(max_retries):
         try:
-            parents_snapshot = tuple(self._parents.items())
+            parents_snapshot = list(self._parents.items())
             break
         except RuntimeError:
             if retry == max_retries - 1:
@@ -52,9 +59,14 @@ def safe_changed(
 
     failure_count = 0
 
-    for parent, key in parents_snapshot:
+    for parent_ref, key in parents_snapshot:
         if failure_count >= max_failures:
             break
+
+        if isinstance(parent_ref, MutableState):
+            parent = parent_ref.get_parent()
+        else:
+            parent = parent_ref
 
         if parent is None:
             continue
@@ -69,22 +81,30 @@ def safe_changed(
                     "Failed to propagate change to parent %s: %s",
                     type(parent),
                     e,
+                    exc_info=True
                 )
                 failure_count += 1
                 continue
 
-        obj_ref = getattr(parent, "obj", None)
-        if obj_ref is not None and callable(obj_ref):
+        obj_method = getattr(parent, "obj", None)
+        if obj_method is not None and callable(obj_method):
             try:
-                instance = obj_ref()
-                if instance is not None:
-                    if key:
-                        flag_modified(instance, key)
-            except (ReferenceError, AttributeError):
-                failure_count += 1
-            except Exception as e:
+                instance = obj_method()
+                if instance is not None and key:
+                    flag_modified(instance, key)
+                continue 
+            except Exception:
                 logger.error("Error flagging modified on SA model: %s", e)
                 failure_count += 1
+                continue
+
+        if key:
+            try:
+                flag_modified(parent, key)
+            except InvalidRequestError:
+                logger.error("Error flagging modified on SA model: %s", e)
+                failure_count += 1
+                pass
 
 
 @contextmanager
