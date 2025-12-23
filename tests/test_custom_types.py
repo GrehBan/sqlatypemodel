@@ -27,7 +27,6 @@ class TestDataclassSupport:
     def test_change_tracking(self) -> None:
         model = DataClassModel(data=[1], meta={})
         
-        # Access via state
         assert model._state in cast(Trackable, model.data)._parents
 
     def test_mutation_triggers_change(self) -> None:

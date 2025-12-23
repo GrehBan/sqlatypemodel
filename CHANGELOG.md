@@ -20,6 +20,8 @@ A **major architectural release** that eliminates the need for hashable models, 
   - Fixed a critical race condition where tracking links could be garbage-collected prematurely.
   - **Logic**: The **Parent** now strongly holds its own `_state` token. The **Child** holds a weak reference to that token in `_parents`. The link now persists exactly as long as the parent is alive.
 
+- **Thread Safety:** Every MutableState instance includes a `threading.RLock`. This recursive lock protects the link and unlink operations, ensuring that the dependency graph remains consistent even when modified by multiple threads.
+
 ### 🛡️ Type Safety & Stability
 
 - **Strict Typing (`mypy --strict`)**:
@@ -33,6 +35,7 @@ A **major architectural release** that eliminates the need for hashable models, 
 
 - **Removed `ForceHashMixin`**: This mixin has been removed as it is no longer necessary. If your code relied on it for custom hashing, please migrate to standard Python hashing or use the new `MutableState` identity system.
 - **Internal API**: `_parents` is now a `WeakKeyDictionary` mapping `MutableState` -> `str` (attribute name), instead of `Parent Object` -> `str`.
+- **Renamed** `json_loads` -> `loader` `json_dumps` -> `dumper` in `sqlatypemodel.model_type.ModelType`
 
 ## [0.7.0] - 2025-12-22
 

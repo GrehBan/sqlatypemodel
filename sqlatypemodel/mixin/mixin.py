@@ -15,9 +15,6 @@ from sqlatypemodel.mixin.protocols import MutableMethods
 from sqlatypemodel.mixin.state import MutableState
 from sqlatypemodel.util import constants
 
-if TYPE_CHECKING:
-    from sqlatypemodel.model_type import ModelType  # noqa: F401
-
 __all__ = ("BaseMutableMixin", "MutableMixin", "LazyMutableMixin")
 
 logger = logging.getLogger(__name__)

@@ -17,7 +17,7 @@ flag_modified = attributes.flag_modified
 
 
 def safe_changed(
-    self: Trackable, max_failures: int = 10, max_retries: int = 3
+    obj: Trackable, max_failures: int = 10, max_retries: int = 3
 ) -> None:
     """Safely notify parent objects about changes.
 
@@ -29,24 +29,24 @@ def safe_changed(
     3. Direct Objects (Nested Pydantic models or Entities)
 
     Args:
-        self: The trackable instance that changed.
+        obj: The trackable instance that changed.
         max_failures: Maximum allowed propagation failures before stopping.
         max_retries: Maximum attempts to snapshot parents dictionary.
     """
-    if not hasattr(self, "_parents"):
+    if not hasattr(obj, "_parents"):
         return
 
     parents_snapshot: list[tuple[Any, Any]] | None = None
 
     for retry in range(max_retries):
         try:
-            parents_snapshot = list(self._parents.items())
+            parents_snapshot = list(obj._parents.items())
             break
         except RuntimeError:
             if retry == max_retries - 1:
                 logger.warning(
                     "Race condition in %s: failed to snapshot _parents.",
-                    self.__class__.__name__,
+                    obj.__class__.__name__,
                 )
                 return
             continue
@@ -63,7 +63,7 @@ def safe_changed(
             break
 
         if isinstance(parent_ref, MutableState):
-            parent = parent_ref.get_parent()
+            parent = parent_ref.ref()
         else:
             parent = parent_ref
 

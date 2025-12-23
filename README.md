@@ -20,14 +20,14 @@ Powered by **`orjson`** for blazing-fast performance and featuring a **State-Bas
 
 * **🐢 -> 🐇 Lazy Loading:**
   * **Zero-cost loading:** Objects loaded from the DB are raw Python dicts until you access them.
-  * **JIT Wrapping:** Wrappers are created Just-In-Time. Loading 5,000 objects takes **~7ms** instead of **~1.1s**.
+  * **JIT Wrapping:** Wrappers are created Just-In-Time.
 
 * **🥒 Pickle & Celery Ready:**
   * Full support for `pickle`. Pass your database models directly to **Celery** workers or cache them in **Redis**.
   * Tracking is automatically restored upon deserialization via `MutableMethods`.
 
 * **🚀 High Performance:**
-  * **Powered by `orjson`:** 10x-50x faster serialization than standard `json`.
+  * **Powered by `orjson`:** faster serialization than standard `json`.
   * **Native Types:** Supports `datetime`, `UUID`, and `numpy` out of the box.
   * **Smart Caching:** Introspection results are cached (`O(1)` overhead).
 
@@ -123,6 +123,7 @@ with Session(engine) as session:
     session.commit() 
 
 ```
+---
 
 ### 🔧 Internal Magic:
 
@@ -140,7 +141,7 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
 **What this means for you:**
 
 * **Zero Configuration:** Just inherit, and the model is ready for tracking.
-* **Unhashable Models OK:** Your models don't need to be hashable. The library assigns a unique `_state` token to every instance to track relationships safely.
+* **`auto_register=False:`** Use this flag if you want to define a base class for your models but don't want it globally registered yet.
 
 ---
 
@@ -193,8 +194,8 @@ class DataConfig(MutableMixin):
 col: Mapped[DataConfig] = mapped_column(
     ModelType(
         DataConfig,
-        json_dumps=asdict,
-        json_loads=lambda d: DataConfig(**d)
+        dumper=asdict,
+        loader=lambda d: DataConfig(**d)
     )
 )
 
@@ -217,8 +218,8 @@ class AttrsConfig(MutableMixin):
 col = mapped_column(
     ModelType(
         AttrsConfig,
-        json_dumps=asdict,
-        json_loads=lambda d: AttrsConfig(**d)
+        dumper=asdict,
+        loader=lambda d: AttrsConfig(**d)
     )
 )
 
@@ -280,6 +281,33 @@ If you try to save a Python `int` larger than this, the library automatically fa
 ### 2. Mixed Types in Collections
 
 While supported, avoid mixing complex mutable types in the same list (e.g., `[MyModel(), {"key": "val"}]`) if you can. It works, but the "Lazy" loading mechanism has to infer types at runtime, which is slightly slower than uniform lists.
+
+---
+
+### 📊 Benchmark Performance Summary
+
+| Name (time in µs) | Min | Max | Mean | StdDev | Median | IQR | OPS (Kops/s) | Rounds |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **test_benchmark_db_load_lazy** | 1.4020 | 23.7250 | 1.5317 | 0.3680 | 1.4920 | 0.0400 | 652.8531 | 48499 |
+| **test_benchmark_read_access_lazy_cached** | 3.8570 | 39.9650 | 4.1546 | 0.6319 | 4.0680 | 0.0890 | 240.6966 | 59698 |
+| **test_benchmark_db_load_eager** | 498.4650 | 646.1940 | 523.9364 | 14.2668 | 521.3440 | 16.8730 | 1.9086 | 1114 |
+
+---
+
+### 🔑 Key Definitions
+
+* **Min/Max/Mean/Median:** The recorded time for the operations in microseconds (µs).
+* **StdDev:** Standard Deviation from the Mean.
+* **IQR:** InterQuartile Range (difference between the 75th and 25th percentiles).
+* **OPS:** Operations Per Second (calculated as ).
+* **Rounds:** The number of times the benchmark was executed to collect data.
+
+### 📝 Execution Overview
+
+* **Platform:** Linux (Python 3.14.2)
+* **Total Tests Collected:** 51
+* **Status:** 51 Passed
+* **Total Duration:** 5.89 seconds
 
 ---
 

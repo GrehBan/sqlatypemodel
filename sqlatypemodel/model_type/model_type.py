@@ -38,8 +38,8 @@ class ModelType(sa.types.TypeDecorator[T], Generic[T]):
     def __init__(
         self,
         model: type[T],
-        json_dumps: Callable[[T], dict[str, Any]] | None = None,
-        json_loads: Callable[[dict[str, Any]], T] | None = None,
+        dumper: Callable[[T], dict[str, Any]] | None = None,
+        loader: Callable[[dict[str, Any]], T] | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -47,8 +47,8 @@ class ModelType(sa.types.TypeDecorator[T], Generic[T]):
 
         Args:
             model: A Pydantic model class (or compatible) to be stored.
-            json_dumps: Custom serialization function (Model -> Dict).
-            json_loads: Custom deserialization function (Dict -> Model).
+            dumper: Custom serialization function (Model -> Dict).
+            loader: Custom deserialization function (Dict -> Model).
             *args: Additional arguments for TypeDecorator.
             **kwargs: Additional keyword arguments for TypeDecorator.
 
@@ -63,20 +63,20 @@ class ModelType(sa.types.TypeDecorator[T], Generic[T]):
 
         is_pydantic = self._is_pydantic_compatible(model)
 
-        if json_dumps is not None:
-            self.dumps: Callable[[T], dict[str, Any]] = json_dumps
+        if dumper is not None:
+            self.dumper: Callable[[T], dict[str, Any]] = dumper
         elif is_pydantic:
-            self.dumps = self._create_pydantic_dumps()
+            self.dumper = self._create_pydantic_dumps()
         else:
             raise ValueError(
                 f"Cannot resolve serialization for {model.__name__}. "
                 f"Inherit from Pydantic BaseModel or provide 'json_dumps'."
             )
 
-        if json_loads is not None:
-            self.loads: Callable[[dict[str, Any]], T] = json_loads
+        if loader is not None:
+            self.loader: Callable[[dict[str, Any]], T] = loader
         elif is_pydantic:
-            self.loads = cast(
+            self.loader = cast(
                 Callable[[dict[str, Any]], T], model.model_validate
             )
         else:
@@ -159,7 +159,7 @@ class ModelType(sa.types.TypeDecorator[T], Generic[T]):
             return value
 
         try:
-            return self.dumps(value)
+            return self.dumper(value)
         except Exception as e:
             logger.error(
                 "Serialization failed for model %s: %s",
@@ -211,7 +211,7 @@ class ModelType(sa.types.TypeDecorator[T], Generic[T]):
             if isinstance(value, str | bytes):
                 value = self._json_loads_str(value)
 
-            result = self.loads(cast("dict[str, Any]", value))
+            result = self.loader(cast("dict[str, Any]", value))
 
             if hasattr(result, "_restore_tracking") and callable(
                 result._restore_tracking

@@ -6,13 +6,30 @@ from weakref import WeakKeyDictionary
 from sqlatypemodel.mixin import events
 from sqlatypemodel.mixin.state import MutableState
 
-__all__ = ("Trackable", "MutableMethods",)
+__all__ = ("Trackable", "MutableMethods", "MutableMixinProto")
 
 T = TypeVar("T", bound="Trackable")
 
 
+
 @runtime_checkable
 class Trackable(Protocol):
+    """Protocol describing a trackable object.
+
+    This protocol defines the interface required for objects that support
+    change tracking within the library.
+    """
+
+    @property
+    def _parents(self: T) -> WeakKeyDictionary[MutableState[T], Any]: ...
+
+    def changed(self) -> None:
+        """Mark the object as changed and propagate the notification."""
+        ...
+
+
+@runtime_checkable
+class MutableMixinProto(Trackable, Protocol):
     """Protocol describing a MutableMixin instance.
 
     This protocol defines the interface required for objects that support
@@ -24,14 +41,7 @@ class Trackable(Protocol):
     _pending_change: bool
 
     @property
-    def _parents(self: T) -> WeakKeyDictionary[MutableState[T], Any]: ...
-    
-    @property
     def _state(self: T) -> MutableState[T]: ...
-
-    def changed(self) -> None:
-        """Mark the object as changed and propagate the notification."""
-        ...
 
     def _restore_tracking(self, _seen: Any | None = None) -> None:
         """Restore change tracking mechanisms (e.g., after unpickling).
@@ -70,12 +80,11 @@ class MutableMethods:
                 object.__getattribute__(self, "_state_inst")
             )
         except AttributeError:
-            val = MutableState.wrap(self)
+            val = MutableState(self)
             object.__setattr__(self, "_state_inst", val)
             return val
 
 
     def changed(self) -> None:
         """Notify parents using the library's safe propagation logic."""
-        # self is not explicitly Trackable in this mixin, but will be at runtime
-        events.safe_changed(cast(Trackable, self))
+        events.safe_changed(self)

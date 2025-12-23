@@ -35,7 +35,6 @@ class TestPickleSupport:
 
         restored.tags.append("new")
 
-        # Check linkage via state
         assert restored._state in restored.tags._parents
 
     def test_manual_setstate(self) -> None:

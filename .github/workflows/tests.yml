@@ -33,7 +33,4 @@ jobs:
     - name: Run unit tests
       run: |
         poetry run pytest --cov=sqlatypemodel
-
-    - name: Run Forensic Stress Test
-      run: |
-        poetry run python tests/test_stress.py
+  

@@ -13,7 +13,7 @@ try:
     HAS_ORJSON = True
 except ImportError:
     HAS_ORJSON = False
-    orjson = None  # type: ignore
+    orjson = None # type: ignore [assignment]
 
 __all__ = (
     "get_serializers",

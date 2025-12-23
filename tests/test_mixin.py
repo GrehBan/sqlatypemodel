@@ -16,12 +16,11 @@ class TestMutableMixinIdentity:
         assert m1 is not m2
         assert m1._state is not m2._state
         
-        # State should be hashable and stable
         assert hash(m1._state) != hash(m2._state)
         
         s1 = m1._state
         m1.data.append("b")
-        assert m1._state is s1  # State instance persists
+        assert m1._state is s1
 
 
 class TestMutableWrapping:

@@ -1,3 +1,4 @@
+import threading
 import weakref
 from typing import Any, Generic, TypeVar
 
@@ -13,26 +14,51 @@ class MutableState(Generic[T]):
         in the parent tracking mechanism.
         
         Attributes:
-            ref: A weak reference to the parent object.
-            attr_name: The attribute name on the parent where the child is stored (if applicable).
+            ref: An object to create weak reference
     """
     def __init__(
             self,
-            ref: weakref.ReferenceType[T],
+            ref: T,
     ) -> None:
-        self.ref = ref
+        self.ref: weakref.ReferenceType[T] = weakref.ref(ref)
+        self._lock = threading.RLock()
 
-    def __hash__(self) -> int:
-        return id(self)
-        
-    def __eq__(self, other: Any) -> bool:
-        return self is other
+
+    def link(self, child: Any, key: str | None) -> None:
+        """Establishes a tracking connection between this state and a child object.
+
+        This method registers the current `MutableState` instance in the child's
+        `_parents` dictionary. This allows the child object to notify this parent 
+        of any mutations using the provided key (attribute name or index).
+
+        The operation is wrapped in a recursive lock (`RLock`) to ensure thread 
+        safety and prevent race conditions when modifying the tracking graph 
+        concurrently.
+
+        Args:
+            child: The child object that should track this parent state.
+            key: The attribute name or collection index where the child is stored 
+                within the parent.
+        """
+        if not hasattr(child, "_parents"):
+            return
+        with self._lock:
+            child._parents[self] = key
     
-    def get_parent(self) -> T | None:
-        return self.ref()
-    
-    @classmethod
-    def wrap(cls: type["MutableState[T]"], parent: T) -> "MutableState[T]":
-        return cls(
-            ref=weakref.ref(parent),
-        )
+    def unlink(self, child: Any) -> None:
+        """Breaks the tracking connection between this state and a child object.
+
+        Removes the current `MutableState` instance from the child's `_parents` 
+        dictionary. Once unlinked, mutations within the child will no longer 
+        trigger change notifications for this parent.
+
+        The operation is thread-safe and uses a recursive lock to ensure atomic 
+        removal of the relationship.
+
+        Args:
+            child: The child object to disconnect from this parent state.
+        """
+        if not hasattr(child, "_parents"):
+            return
+        with self._lock:
+            child._parents.pop(self, None)
