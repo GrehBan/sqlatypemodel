@@ -1,7 +1,10 @@
 """Pickle state management and serialization helpers."""
 
+from __future__ import annotations
+
 from typing import Any
 
+from sqlatypemodel.mixin._introspection_data import _LIB_ATTRS
 from sqlatypemodel.util import constants
 
 
@@ -17,7 +20,7 @@ def cleanup_pickle_state(state: Any) -> Any:
     if not isinstance(state, dict):
         return state
 
-    keys_to_remove = constants._LIB_ATTRS
+    keys_to_remove = _LIB_ATTRS
     for key in keys_to_remove:
         state.pop(key, None)
 
@@ -36,7 +39,7 @@ def manual_setstate(instance: Any, state: dict[str, Any]) -> None:
         state: The dictionary containing the state attributes.
     """
     for key, value in state.items():
-        if key in constants._LIB_ATTRS:
+        if key in _LIB_ATTRS:
             continue
         try:
             object.__setattr__(instance, key, value)

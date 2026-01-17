@@ -1,11 +1,17 @@
 """Introspection and validation logic for object attributes."""
 
+from __future__ import annotations
+
+from collections.abc import Hashable
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.ext.mutable import MutableDict, MutableList, MutableSet
 
-from sqlatypemodel.util import constants
+from sqlatypemodel.mixin._introspection_data import (
+    _SKIP_ATTRS,
+    _STARTSWITCH_SKIP_ATTRS,
+)
 
 
 def is_descriptor_property(descriptor: Any) -> bool:
@@ -39,7 +45,26 @@ def is_pydantic(obj: Any) -> bool:
     return hasattr(cls, "model_fields") or hasattr(cls, "__fields__")
 
 
-@lru_cache(maxsize=4096)
+@lru_cache(maxsize=8192)
+def _ignore_attr_name_inner(cls: type[Any], attr_name: str) -> bool:
+    """Internal implementation with caching (increased cache size)."""
+    # Fast checks first
+    if attr_name in _SKIP_ATTRS:
+        return True
+    if attr_name.startswith(_STARTSWITCH_SKIP_ATTRS):
+        return True
+
+    # Expensive check: inspect class descriptor
+    try:
+        descriptor = getattr(cls, attr_name, None)
+        if is_descriptor_property(descriptor) or callable(descriptor):
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
 def ignore_attr_name(cls: type[Any], attr_name: str) -> bool:
     """Fast check if an attribute should be ignored during scanning.
 
@@ -52,23 +77,12 @@ def ignore_attr_name(cls: type[Any], attr_name: str) -> bool:
     Returns:
         True if the attribute should be skipped, False otherwise.
     """
-    if attr_name in constants._SKIP_ATTRS:
-        return True
-    if attr_name.startswith(constants._STARTSWITCH_SKIP_ATTRS):
-        return True
-
-    try:
-        descriptor = getattr(cls, attr_name, None)
-        if is_descriptor_property(descriptor) or callable(descriptor):
-            return True
-    except Exception:
-        pass
-
-    return False
+    # Cast to Hashable internally to satisfy mypy for lru_cache call
+    return _ignore_attr_name_inner(cast(Hashable, cls), attr_name)
 
 
 def extract_attrs_to_scan(instance: Any) -> dict[str, Any]:
-    """Extract attributes from __dict__ and __slots__ for scanning.
+    """Extract attributes from __dict__ and __slots__ for scanning (optimized).
 
     Args:
         instance: The object instance to extract attributes from.
@@ -78,6 +92,7 @@ def extract_attrs_to_scan(instance: Any) -> dict[str, Any]:
     """
     attrs_to_scan: dict[str, Any] = {}
 
+    # Try __dict__ first (most common case)
     try:
         obj_dict = object.__getattribute__(instance, "__dict__")
         if obj_dict:
@@ -85,10 +100,12 @@ def extract_attrs_to_scan(instance: Any) -> dict[str, Any]:
     except AttributeError:
         pass
 
+    # Try __slots__ (less common)
     try:
         slots = object.__getattribute__(instance, "__slots__")
         if slots:
             for slot_name in slots:
+                # Skip if already in __dict__
                 if slot_name in attrs_to_scan:
                     continue
                 try:
@@ -103,7 +120,7 @@ def extract_attrs_to_scan(instance: Any) -> dict[str, Any]:
 
 
 def should_notify_change(old_value: Any, new_value: Any) -> bool:
-    """Determine if a change notification is necessary based on values.
+    """Determine if a change notification is necessary (optimized).
 
     Args:
         old_value: The previous value of the attribute.
@@ -112,16 +129,21 @@ def should_notify_change(old_value: Any, new_value: Any) -> bool:
     Returns:
         True if a change notification should be fired, False otherwise.
     """
+    # Identity check first (fastest)
     if old_value is new_value:
         return False
 
+    # Mutable types always require notification
+    # Use isinstance for accuracy (includes subclasses)
     if isinstance(
         old_value,
         list | dict | set | MutableList | MutableDict | MutableSet,
     ):
         return True
 
+    # Equality check (might be expensive for custom objects)
     try:
         return bool(old_value != new_value)
     except Exception:
+        # If comparison fails, assume change
         return True

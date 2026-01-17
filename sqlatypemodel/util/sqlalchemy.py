@@ -1,3 +1,15 @@
+"""Create a synchronous SQLAlchemy engine with orjson serializers.
+
+Args:
+    *args: Positional arguments passed to `sqlalchemy.create_engine`.
+    **kwargs: Keyword arguments passed to `sqlalchemy.create_engine`.
+
+Returns:
+    An instance of `sqlalchemy.Engine`.
+"""
+
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Engine
@@ -16,28 +28,22 @@ if TYPE_CHECKING:
     create_engine = sa_create_engine
     create_async_engine = sa_create_async_engine
 else:
+
     def create_engine(*args: Any, **kwargs: Any) -> Engine:
-        """Create a synchronous SQLAlchemy engine with orjson serializers.
 
-        Args:
-            *args: Positional arguments passed to `sqlalchemy.create_engine`.
-            **kwargs: Keyword arguments passed to `sqlalchemy.create_engine`.
-
-        Returns:
-            An instance of `sqlalchemy.Engine`.
-        """
         dumps, loads = get_serializers()
         kwargs.setdefault("json_serializer", dumps)
         kwargs.setdefault("json_deserializer", loads)
         return sa_create_engine(*args, **kwargs)
 
-
     def create_async_engine(*args: Any, **kwargs: Any) -> AsyncEngine:
         """Create an asynchronous SQLAlchemy engine with orjson serializers.
 
         Args:
-            *args: Positional arguments passed to `sqlalchemy.create_async_engine`.
-            **kwargs: Keyword arguments passed to `sqlalchemy.create_async_engine`.
+            *args: Positional arguments passed to
+                `sqlalchemy.create_async_engine`.
+            **kwargs: Keyword arguments passed to
+                `sqlalchemy.create_async_engine`.
 
         Returns:
             An instance of `sqlalchemy.AsyncEngine`.

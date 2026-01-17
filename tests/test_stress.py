@@ -18,6 +18,7 @@ class StressBase(DeclarativeBase):
 
 class NestedData(MutableMixin, BaseModel):
     """Nested mutable data structure."""
+
     val: int
     meta: dict[str, Any] = Field(default_factory=dict)
     child: list[int] = Field(default_factory=list)
@@ -25,6 +26,7 @@ class NestedData(MutableMixin, BaseModel):
 
 class StressEntity(StressBase):
     """SQLAlchemy entity for fuzzing."""
+
     __tablename__ = "stress_entities"
     id: Mapped[int] = mapped_column(primary_key=True)
     data: Mapped[NestedData] = mapped_column(ModelType(NestedData))
@@ -38,7 +40,7 @@ class DBStateMachine(RuleBasedStateMachine):
         self.engine = create_engine(
             "sqlite:///:memory:",
             poolclass=StaticPool,
-            connect_args={"check_same_thread": False}
+            connect_args={"check_same_thread": False},
         )
         StressBase.metadata.create_all(self.engine)
         self.session = Session(self.engine)
@@ -46,21 +48,26 @@ class DBStateMachine(RuleBasedStateMachine):
     def teardown(self) -> None:
         self.session.close()
         self.engine.dispose()
-        super().teardown() # type: ignore[no-untyped-call]
+        super().teardown()  # type: ignore[no-untyped-call]
 
     entities = Bundle("entities")
 
     MIN_I64 = -(2**63)
     MAX_I64 = (2**63) - 1
 
-    @rule(target=entities, val=st.integers(min_value=MIN_I64, max_value=MAX_I64))
+    @rule(
+        target=entities, val=st.integers(min_value=MIN_I64, max_value=MAX_I64)
+    )
     def create_entity(self, val: int) -> StressEntity:
         obj = StressEntity(data=NestedData(val=val))
         self.session.add(obj)
         self.session.commit()
         return obj
 
-    @rule(entity=entities, new_val=st.integers(min_value=MIN_I64, max_value=MAX_I64))
+    @rule(
+        entity=entities,
+        new_val=st.integers(min_value=MIN_I64, max_value=MAX_I64),
+    )
     def modify_data_val(self, entity: StressEntity, new_val: int) -> None:
         """Modify top-level field."""
         entity.data.val = new_val
@@ -68,7 +75,9 @@ class DBStateMachine(RuleBasedStateMachine):
         self.session.expire(entity)
         assert entity.data.val == new_val
 
-    @rule(entity=entities, item=st.integers(min_value=MIN_I64, max_value=MAX_I64))
+    @rule(
+        entity=entities, item=st.integers(min_value=MIN_I64, max_value=MAX_I64)
+    )
     def modify_nested_list(self, entity: StressEntity, item: int) -> None:
         """Modify nested list (append)."""
         entity.data.child.append(item)
@@ -76,8 +85,14 @@ class DBStateMachine(RuleBasedStateMachine):
         self.session.expire(entity)
         assert entity.data.child[-1] == item
 
-    @rule(entity=entities, key=st.text(min_size=1), value=st.integers(min_value=MIN_I64, max_value=MAX_I64))
-    def modify_nested_dict(self, entity: StressEntity, key: str, value: int) -> None:
+    @rule(
+        entity=entities,
+        key=st.text(min_size=1),
+        value=st.integers(min_value=MIN_I64, max_value=MAX_I64),
+    )
+    def modify_nested_dict(
+        self, entity: StressEntity, key: str, value: int
+    ) -> None:
         """Modify nested dictionary."""
         entity.data.meta[key] = value
         self.session.commit()

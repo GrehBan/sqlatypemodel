@@ -1,4 +1,5 @@
 """Main Mixin module."""
+
 from __future__ import annotations
 
 import abc
@@ -11,7 +12,11 @@ from weakref import WeakKeyDictionary
 from sqlalchemy.ext.mutable import Mutable
 
 from sqlatypemodel.mixin import events, inspection, serialization, wrapping
-from sqlatypemodel.mixin.protocols import MutableMethods
+from sqlatypemodel.mixin._introspection_data import (
+    _ATOMIC_TYPES,
+    _PYDANTIC_CLASS_ACCESS_ONLY,
+)
+from sqlatypemodel.mixin.protocols import _COLLECTION_TYPES, MutableMethods
 from sqlatypemodel.mixin.state import MutableState
 from sqlatypemodel.util import constants
 
@@ -24,7 +29,7 @@ M = TypeVar("M", bound="BaseMutableMixin")
 
 class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
     """Abstract Base Class for Mutable Mixins.
-    
+
     Implements change tracking using State-based parent references.
     """
 
@@ -32,10 +37,11 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
     _change_suppress_level: int = 0
     _pending_change: bool = False
     _state: MutableState[BaseMutableMixin]
-    
-    _parents_store: WeakKeyDictionary[Any, Any]
+
+    _parents_store: WeakKeyDictionary[MutableState[Any], str | int | None]
 
     if not TYPE_CHECKING:
+
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             """Initialize the mixin with default tracking state."""
             object.__setattr__(self, "_change_suppress_level", 0)
@@ -62,7 +68,7 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
 
         cast("type[ModelType[Any]]", associate).register_mutable(cls)
         super().__init_subclass__(**kwargs)
-    
+
     def changed(self) -> None:
         """Notify observers that this object has changed."""
         if not events.mark_change_or_defer(self):
@@ -77,15 +83,16 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
         """Check if an attribute should be skipped during wrapping."""
         return inspection.ignore_attr_name(type(self), attr_name)
 
-    def _restore_tracking(self, _seen: Any | None = None) -> None:
+    def _restore_tracking(self, _seen: dict[int, Any] | None = None) -> None:
         """Restore tracking for the object (abstract method)."""
         raise NotImplementedError
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore object state from pickle."""
-        if hasattr(super(), "__setstate__"):
+        parent_setstate = getattr(super(), "__setstate__", None)
+        if parent_setstate:
             try:
-                super().__setstate__(state)  # type: ignore
+                parent_setstate(state)
             except Exception:
                 serialization.manual_setstate(self, state)
         else:
@@ -98,14 +105,17 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
         """Prepare object state for pickling."""
         state: dict[str, Any] = {}
         parent_handled = False
-        if hasattr(super(), "__getstate__"):
+        parent_getstate = getattr(super(), "__getstate__", None)
+        if parent_getstate:
             try:
-                parent_state = super().__getstate__()  # type: ignore
+                parent_state = parent_getstate()
                 if isinstance(parent_state, dict):
                     state.update(parent_state)
                     parent_handled = True
                 elif parent_state is not None:
-                    return dict(serialization.cleanup_pickle_state(parent_state))
+                    return dict(
+                        serialization.cleanup_pickle_state(parent_state)
+                    )
             except Exception:
                 pass
 
@@ -119,55 +129,71 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
             super().__setattr__(name, value)
             return
 
+        # Get old value (fast path)
         try:
             old_value = object.__getattribute__(self, name)
         except AttributeError:
             old_value = constants.MISSING
 
+        # Short-circuit: if value hasn't changed, return early
         if old_value is value:
             return
 
-        if type(value) in constants._ATOMIC_TYPES:
+        # Atomic type assignment (fast path)
+        if type(value) in _ATOMIC_TYPES:
             object.__setattr__(self, name, value)
-            if (
-                old_value is not constants.MISSING and old_value != value
-            ) or old_value is constants.MISSING:
-                self.changed()
-            return
-
-        if wrapping.is_mutable_and_untracked(value):
-            wrapped_value = wrapping.wrap_mutable(self, value, key=name)
-            
-            if hasattr(wrapped_value, "_parents"):
-                wrapped_value._parents[self._state] = name
-            
-            object.__setattr__(self, name, wrapped_value)
-            if (
+            # Notify only if value actually changed
+            if (old_value is not constants.MISSING and old_value != value) or (
                 old_value is constants.MISSING
-                or inspection.should_notify_change(old_value, wrapped_value)
             ):
                 self.changed()
             return
 
-        if hasattr(value, "_parents"):
-            value._parents[self._state] = name
+        # Get state once (avoid repeated calls)
+        state = self._state
+
+        # Mutable/untracked type (needs wrapping)
+        if wrapping.is_mutable_and_untracked(value):
+            wrapped_value = wrapping.wrap_mutable(self, value, key=name)
+
+            # Try fast path first (avoid hasattr)
+            try:
+                parents = object.__getattribute__(wrapped_value, "_parents")
+                parents[state] = name
+            except AttributeError:
+                pass
+
+            object.__setattr__(self, name, wrapped_value)
+            if (
+                old_value is constants.MISSING
+            ) or inspection.should_notify_change(old_value, wrapped_value):
+                self.changed()
+            return
+
+        # Already trackable (has _parents)
+        try:
+            parents = object.__getattribute__(value, "_parents")
+            parents[state] = name
             object.__setattr__(self, name, value)
 
             if (
                 old_value is not constants.MISSING
                 and inspection.should_notify_change(old_value, value)
-            ) or old_value is constants.MISSING:
+            ) or (old_value is constants.MISSING):
                 self.changed()
             return
+        except AttributeError:
+            pass
 
+        # Regular attribute (no wrapping needed)
         object.__setattr__(self, name, value)
 
         if (
             old_value is not constants.MISSING
             and inspection.should_notify_change(old_value, value)
-        ) or old_value is constants.MISSING:
+        ) or (old_value is constants.MISSING):
             self.changed()
-    
+
     @classmethod
     def coerce(cls: type[M], key: str, value: Any) -> M | None:
         """Coerce value into the Mixin type."""
@@ -175,12 +201,13 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
             return None
         if isinstance(value, cls):
             return value
-        if isinstance(value, constants._COLLECTION_TYPES):
-            return value  # type: ignore
+        if isinstance(value, _COLLECTION_TYPES):
+            return cast(M, value)
 
         if isinstance(value, dict) and hasattr(cls, "model_validate"):
             try:
-                return cast(M, cls.model_validate(value))  # type: ignore
+                validate_func = getattr(cls, "model_validate")
+                return cast(M, validate_func(value))
             except Exception as e:
                 logger.warning(
                     "Failed to coerce dict to %s: %s", cls.__name__, e
@@ -193,15 +220,18 @@ class MutableMixin(BaseMutableMixin, auto_register=False):
     """Standard (Eager) Implementation of MutableMixin."""
 
     if not TYPE_CHECKING:
+
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             """Initialize and immediately restore tracking."""
             super().__init__(*args, **kwargs)
             self._restore_tracking()
 
-    def _restore_tracking(self, _seen: Any | None = None) -> None:
+    def _restore_tracking(self, _seen: dict[int, Any] | None = None) -> None:
         """Recursively scan and wrap all fields."""
         try:
             wrapping.scan_and_wrap_fields(self, _seen=_seen)
+            # Also ensure all children are linked to our new state after pickle
+            wrapping.relink_descendants(self, _seen=_seen)
         except Exception as e:
             logger.warning("Failed to restore tracking: %s", e)
 
@@ -209,25 +239,63 @@ class MutableMixin(BaseMutableMixin, auto_register=False):
 class LazyMutableMixin(BaseMutableMixin, auto_register=False):
     """Lazy Implementation of MutableMixin."""
 
-    def _restore_tracking(self, _seen: Any | None = None) -> None:
-        """No-op for lazy mixin."""
-        return
+    def _restore_tracking(self, _seen: dict[int, Any] | None = None) -> None:
+        """Restores tracking links after unpickling."""
+        # For lazy mixin, we only need to restore links for
+        # already-wrapped objects
+        try:
+            wrapping.relink_descendants(self, _seen=_seen)
+        except Exception as e:
+            logger.warning("Failed to restore lazy tracking: %s", e)
 
     def __getattribute__(self, name: str) -> Any:
-        """Retrieve attribute with Just-In-Time wrapping."""
-        if name in constants._PYDANTIC_CLASS_ACCESS_ONLY:
-            return getattr(type(self), name)
+        """Retrieve attribute with Just-In-Time wrapping (ultra-optimized)."""
+        # 1. Primary Fast Path: skip all internal/special attributes
+        # immediately
+        if name.startswith("_"):
+            # We must let Pydantic and other libs handle their own
+            # private/internal attrs
+            if name in _PYDANTIC_CLASS_ACCESS_ONLY:
+                return getattr(type(self), name)
+
+            # Fast return for our own internal storage names
+            if name in (
+                "_parents_store",
+                "_state_inst",
+                "_parents",
+                "_state",
+            ):
+                return object.__getattribute__(self, name)
+
+            # For other '_' names, fallback to standard behavior
+            return object.__getattribute__(self, name)
 
         value = object.__getattribute__(self, name)
 
+        # 2. Secondary Fast Path: if it's already wrapped or atomic, return it
+        # type(value) in _ATOMIC_TYPES is O(1) frozenset lookup
+        if type(value) in _ATOMIC_TYPES:
+            return value
+
+        # Check if already a Mutable collection (which has _parents)
+        # Use direct attribute check to avoid hasattr overhead
+        try:
+            object.__getattribute__(value, "_parents")
+            return value
+        except AttributeError:
+            pass
+
+        # 3. Slow Path: check if we should ignore it
+        # This call is cached internally in inspection module
         if inspection.ignore_attr_name(type(self), name):
             return value
 
+        # 4. Wrapping Path
         if not wrapping.is_mutable_and_untracked(value):
             return value
 
         wrapped = wrapping.wrap_mutable(self, value, key=name)
-        
+
         if wrapped is not value:
             object.__setattr__(self, name, wrapped)
         return wrapped

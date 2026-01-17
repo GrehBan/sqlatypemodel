@@ -15,9 +15,9 @@ class TestMutableMixinIdentity:
 
         assert m1 is not m2
         assert m1._state is not m2._state
-        
+
         assert hash(m1._state) != hash(m2._state)
-        
+
         s1 = m1._state
         m1.data.append("b")
         assert m1._state is s1
@@ -35,7 +35,7 @@ class TestMutableWrapping:
 
         assert model._state in model.data._parents
         assert model.data._parents[model._state] == "data"
-        
+
         assert model._state in model.meta._parents
         assert model.meta._parents[model._state] == "meta"
 

@@ -1,5 +1,7 @@
 """Change notification logic and signal propagation."""
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -19,7 +21,7 @@ flag_modified = attributes.flag_modified
 def safe_changed(
     obj: Trackable, max_failures: int = 10, max_retries: int = 3
 ) -> None:
-    """Safely notify parent objects about changes.
+    """Safely notify parent objects about changes (optimized).
 
     Handles race conditions when the `_parents` dictionary is modified
     during iteration by using a snapshot-and-retry approach.
@@ -33,35 +35,43 @@ def safe_changed(
         max_failures: Maximum allowed propagation failures before stopping.
         max_retries: Maximum attempts to snapshot parents dictionary.
     """
-    if not hasattr(obj, "_parents"):
+    # Fast path: no parents
+    try:
+        parents_dict = object.__getattribute__(obj, "_parents")
+    except AttributeError:
         return
 
+    # Try to get a snapshot of parents (with retries for race conditions)
     parents_snapshot: list[tuple[Any, Any]] | None = None
 
     for retry in range(max_retries):
         try:
-            parents_snapshot = list(obj._parents.items())
+            # Create snapshot once, outside the exception handler
+            parents_snapshot = list(parents_dict.items())
             break
         except RuntimeError:
+            # Dictionary size changed during iteration
             if retry == max_retries - 1:
                 logger.warning(
                     "Race condition in %s: failed to snapshot _parents.",
                     obj.__class__.__name__,
                 )
                 return
-            continue
         except AttributeError:
+            # _parents was deleted
             return
 
     if not parents_snapshot:
         return
 
+    # Iterate through snapshot
     failure_count = 0
 
     for parent_ref, key in parents_snapshot:
         if failure_count >= max_failures:
             break
 
+        # Dereference MutableState (common case, check first)
         if isinstance(parent_ref, MutableState):
             parent = parent_ref.ref()
         else:
@@ -70,8 +80,9 @@ def safe_changed(
         if parent is None:
             continue
 
+        # Try to call changed method (most common path)
         changed_method = getattr(parent, "changed", None)
-        if callable(changed_method):
+        if changed_method is not None:
             try:
                 changed_method()
                 continue
@@ -80,30 +91,31 @@ def safe_changed(
                     "Failed to propagate change to parent %s: %s",
                     type(parent),
                     e,
-                    exc_info=True
+                    exc_info=True,
                 )
                 failure_count += 1
                 continue
 
+        # Fallback: try to get obj() method (SQLAlchemy InstanceState)
         obj_method = getattr(parent, "obj", None)
         if obj_method is not None and callable(obj_method):
             try:
                 instance = obj_method()
                 if instance is not None and key:
                     flag_modified(instance, key)
-                continue 
+                continue
             except Exception as e:
                 logger.error("Error flagging modified on SA model: %s", e)
                 failure_count += 1
                 continue
 
+        # Last resort: flag_modified on parent directly
         if key:
             try:
                 flag_modified(parent, key)
             except InvalidRequestError as e:
                 logger.error("Error flagging modified on SA model: %s", e)
                 failure_count += 1
-                pass
 
 
 @contextmanager

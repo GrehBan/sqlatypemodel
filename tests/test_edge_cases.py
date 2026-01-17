@@ -31,7 +31,7 @@ class TestLazyMixin:
 
         assert isinstance(wrapped, MutableDict)
         assert wrapped == {"a": 1}
-        
+
         assert wrapped._parents[model._state] == "data"
 
         assert isinstance(model.__dict__["data"], MutableDict)
@@ -53,7 +53,7 @@ class TestLazyMixin:
 
         with patch.object(model, "changed") as mock_changed:
             model.data["nested"]["x"] = 200
-            
+
             mock_changed.assert_called_once()
 
         assert model.data["nested"]["x"] == 200
@@ -62,7 +62,7 @@ class TestLazyMixin:
         """Verify that access to system attributes does not trigger recursion."""
         model = LazyModel()
 
-        assert isinstance(model.model_fields, dict)
+        assert isinstance(LazyModel.model_fields, dict)
         assert isinstance(model.__dict__, dict)
 
         with pytest.raises(AttributeError):
@@ -83,7 +83,7 @@ class TestLazyMixin:
         """Verify that tracking persists after pickling/unpickling."""
         original = LazyModel(data={"k": "v"})
         _ = original.data
-        
+
         restored = pickle.loads(pickle.dumps(original))
 
         assert restored.data == {"k": "v"}

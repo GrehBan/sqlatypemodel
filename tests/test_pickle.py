@@ -10,6 +10,7 @@ from sqlatypemodel.mixin import serialization
 
 class PickleModel(MutableMixin, BaseModel):
     """Test model for pickling."""
+
     tags: list[str] = Field(default_factory=list)
 
 

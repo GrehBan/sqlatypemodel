@@ -1,29 +1,32 @@
 """JSON serialization utilities with orjson support and automatic fallback."""
+
 from __future__ import annotations
 
 import json
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
+orjson: Any
+
 try:
-    import orjson
+    import orjson as _orjson
+
+    orjson = _orjson
     HAS_ORJSON = True
 except ImportError:
     HAS_ORJSON = False
-    orjson = None # type: ignore [assignment]
+    orjson = None
 
-__all__ = (
-    "get_serializers",
-)
+__all__ = ("get_serializers",)
 
 
 def _std_dumps(obj: Any) -> str:
     """
     Standard JSON serialization.
-    Uses default=str to safely handle types like Decimal or datetime 
+    Uses default=str to safely handle types like Decimal or datetime
     if standard json doesn't support them out of the box.
     """
     return json.dumps(obj, default=str)
@@ -37,7 +40,7 @@ def _orjson_dumps_wrapper(obj: Any) -> str:
     2. Unknown types (TypeError) -> Fallback
     """
     try:
-        return orjson.dumps(obj).decode("utf-8")
+        return cast(str, orjson.dumps(obj).decode("utf-8"))
     except (orjson.JSONEncodeError, TypeError, OverflowError):
         return _std_dumps(obj)
 

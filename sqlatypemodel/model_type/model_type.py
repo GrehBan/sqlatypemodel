@@ -169,9 +169,7 @@ class ModelType(sa.types.TypeDecorator[T], Generic[T]):
             )
             raise SerializationError(self.model.__name__, e) from e
 
-    def process_literal_param(
-        self, value: T | None, dialect: Dialect
-    ) -> str:
+    def process_literal_param(self, value: T | None, dialect: Dialect) -> str:
         """Render value as a literal SQL string (for logs/debugging).
 
         Args:

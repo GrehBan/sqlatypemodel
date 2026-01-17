@@ -29,7 +29,9 @@ class Task(IntegrationBase):
 class TestPickleIntegration:
     """Tests simulating external systems like Celery."""
 
-    def test_workflow_lifecycle(self, session: Session, engine: Engine) -> None:
+    def test_workflow_lifecycle(
+        self, session: Session, engine: Engine
+    ) -> None:
         """Verify object consistency across DB -> Pickle -> DB cycle."""
         IntegrationBase.metadata.create_all(engine)
 
@@ -50,7 +52,7 @@ class TestPickleIntegration:
         result_payload = pickle.dumps(worker_task)
 
         final_task = pickle.loads(result_payload)
-        
+
         session.merge(final_task)
         session.commit()
 

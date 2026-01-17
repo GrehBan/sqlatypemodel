@@ -47,7 +47,8 @@ class SerializationError(SQLATypeModelError):
 
     Attributes:
         model_name (str): Name of the model class that failed to serialize.
-        original_error (Exception | None): The underlying exception that caused the failure.
+        original_error (Exception | None): The underlying exception that
+            caused the failure.
 
     Example:
         >>> raise SerializationError(
@@ -84,8 +85,10 @@ class DeserializationError(SQLATypeModelError):
 
     Attributes:
         model_name (str): Name of the model class that failed to deserialize.
-        data (dict[str, Any] | None): The raw database data that could not be deserialized.
-        original_error (Exception | None): The underlying exception that caused the failure.
+        data (dict[str, Any] | None): The raw database data that could
+            not be deserialized.
+        original_error (Exception | None): The underlying exception that
+            caused the failure.
 
     Example:
         >>> raise DeserializationError(

@@ -14,15 +14,18 @@ class EagerModel(MutableMixin, BaseModel):
     """
     Model for Eager loading tests.
     """
+
     model_config = {"extra": "allow"}
-    
+
     data: list[Any] = Field(default_factory=list)
     meta: dict[str, Any] = Field(default_factory=dict)
-    
+
+
 class LazyModel(LazyMutableMixin, BaseModel):
     """
     Model for Lazy loading tests.
     """
+
     model_config = {"extra": "allow"}
 
     data: dict[str, Any] = Field(default_factory=dict)
@@ -35,10 +38,11 @@ def engine() -> Generator[Engine, None, None]:
     eng = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool # Важно для in-memory сохранения данных между сессиями
+        poolclass=StaticPool,  # Важно для in-memory сохранения данных между сессиями
     )
     yield eng
     eng.dispose()
+
 
 @pytest.fixture(scope="function")
 def session(engine: Engine) -> Generator[Session, None, None]:
@@ -46,9 +50,9 @@ def session(engine: Engine) -> Generator[Session, None, None]:
     conn = engine.connect()
     trans = conn.begin()
     sess = Session(bind=conn)
-    
+
     yield sess
-    
+
     sess.close()
     trans.rollback()
     conn.close()

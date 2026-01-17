@@ -12,6 +12,7 @@ from sqlatypemodel.exceptions import DeserializationError
 
 class Config(BaseModel):
     """Simple Pydantic model for testing."""
+
     theme: str
     debug: bool = False
 
@@ -39,7 +40,9 @@ class TestModelType:
         assert model_type.process_bind_param(None, dummy_dialect) is None
 
         raw_dict = {"theme": "light", "debug": True}
-        assert model_type.process_bind_param(raw_dict, dummy_dialect) == raw_dict
+        assert (
+            model_type.process_bind_param(raw_dict, dummy_dialect) == raw_dict
+        )
 
     def test_process_result_value(self, model_type: ModelType[Config]) -> None:
         """Verify deserialization from dictionary/string to object."""
@@ -49,11 +52,15 @@ class TestModelType:
         assert isinstance(res, Config)
         assert res.theme == "dark"
 
-        res_str = model_type.process_result_value('{"theme": "light"}', dummy_dialect)
+        res_str = model_type.process_result_value(
+            '{"theme": "light"}', dummy_dialect
+        )
         assert isinstance(res_str, Config)
         assert res_str.theme == "light"
 
     def test_errors(self, model_type: ModelType[Config]) -> None:
         """Verify that invalid data triggers custom exceptions."""
         with pytest.raises(DeserializationError):
-            model_type.process_result_value("invalid json", cast(Dialect, None))
+            model_type.process_result_value(
+                "invalid json", cast(Dialect, None)
+            )

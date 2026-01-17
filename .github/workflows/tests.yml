@@ -30,6 +30,18 @@ jobs:
       run: |
         poetry install
         
+    - name: Run linting (ruff)
+      run: |
+        poetry run ruff check sqlatypemodel tests
+        
+    - name: Run formatting check (black)
+      run: |
+        poetry run black --check sqlatypemodel tests
+        
+    - name: Run type checking (mypy)
+      run: |
+        poetry run mypy sqlatypemodel
+        
     - name: Run unit tests
       run: |
         poetry run pytest --cov=sqlatypemodel

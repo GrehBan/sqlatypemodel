@@ -12,6 +12,7 @@ class TestPydanticModelProtocol:
 
     def test_pydantic_basemodel_conforms(self) -> None:
         """Verify that standard Pydantic models conform."""
+
         class Config(BaseModel):
             theme: str
 
@@ -20,6 +21,7 @@ class TestPydanticModelProtocol:
 
     def test_custom_class_conforms(self) -> None:
         """Verify that custom classes with correct methods conform."""
+
         class CustomModel:
             def model_dump(self, mode: str = "python") -> dict[str, Any]:
                 return {}
@@ -33,6 +35,7 @@ class TestPydanticModelProtocol:
 
     def test_plain_class_not_conforms(self) -> None:
         """Verify that empty classes do not conform."""
+
         class PlainClass:
             pass
 

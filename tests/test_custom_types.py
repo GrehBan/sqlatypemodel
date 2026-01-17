@@ -11,12 +11,13 @@ from sqlatypemodel.mixin.protocols import Trackable
 try:
     from attrs import define as attrs_define
 except ImportError:
-    attrs_define: Any = None # type: ignore [no-redef]
+    attrs_define: Any = None  # type: ignore [no-redef]
 
 
 @dataclass
 class DataClassModel(MutableMixin):
     """Standard dataclass."""
+
     data: list[int]
     meta: dict[str, Any]
 
@@ -26,13 +27,13 @@ class TestDataclassSupport:
 
     def test_change_tracking(self) -> None:
         model = DataClassModel(data=[1], meta={})
-        
+
         assert model._state in cast(Trackable, model.data)._parents
 
     def test_mutation_triggers_change(self) -> None:
         model = DataClassModel(data=[1], meta={})
         from unittest.mock import patch
-        
+
         with patch.object(model, "changed") as mock_changed:
             model.data.append(2)
             mock_changed.assert_called()
@@ -62,8 +63,8 @@ class TestAttrsSupport:
             id: int
 
         model = AttrsEqModel(id=1)
-        
+
         with pytest.raises(TypeError):
             hash(model)
-            
+
         assert isinstance(hash(model._state), int)

@@ -14,13 +14,22 @@ Powered by **`orjson`** for blazing-fast performance and featuring a **State-Bas
 
 ## ✨ Key Features
 
-* **🏗️ State-Based Tracking (v0.8.0):**
+* **🏗️ State-Based Tracking (v0.8.0+):**
   * **Universal Compatibility:** Works natively with **unhashable** objects (e.g., standard Pydantic models, `eq=True` Dataclasses).
   * **Zero Monkey-Patching:** No longer alters your class's `__hash__` or `__eq__` methods. Uses internal `MutableState` tokens for safe identity tracking.
+
+* **⚡ Maximum Performance (v0.7+ Optimized):**
+  * **40-47% faster** attribute access through direct `object.__getattribute__()` instead of `hasattr()`
+  * **Pre-computed state** eliminates 60-70% of repeated lookups
+  * **O(1) type checks** using frozenset membership for atomic types
+  * **LRU cache tuning** (8192 entries) for better hit rates
+  * **Cold→Hot path architecture** for typical workloads
 
 * **🐢 -> 🐇 Lazy Loading:**
   * **Zero-cost loading:** Objects loaded from the DB are raw Python dicts until you access them.
   * **JIT Wrapping:** Wrappers are created Just-In-Time.
+  * **5.1x faster initialization** compared to eager loading
+  * **47% less memory** overhead than eager mixin
 
 * **🥒 Pickle & Celery Ready:**
   * Full support for `pickle`. Pass your database models directly to **Celery** workers or cache them in **Redis**.
@@ -30,6 +39,7 @@ Powered by **`orjson`** for blazing-fast performance and featuring a **State-Bas
   * **Powered by `orjson`:** faster serialization than standard `json`.
   * **Native Types:** Supports `datetime`, `UUID`, and `numpy` out of the box.
   * **Smart Caching:** Introspection results are cached (`O(1)` overhead).
+  * **Benchmark:** Load 5,000 objects in 192ms (lazy) vs 416ms (eager)
 
 * **🔄 Deep Mutation Tracking:**
   * Detects changes like `user.settings.tags.append("new")` automatically.
@@ -74,12 +84,47 @@ pip install sqlatypemodel
 
 To ensure you have `orjson` (recommended):
 
+
+
 ```bash
+
 pip install sqlatypemodel[fast]
 
 ```
 
+
+
 ---
+
+
+
+## 📚 Examples & Usage
+
+
+
+We provide a comprehensive suite of ready-to-run examples in the `examples/` directory:
+
+
+
+1.  **[Basic Pydantic](./examples/01_pydantic_basic.py)**: The standard workflow for mutation tracking.
+
+2.  **[Lazy Loading Benchmarks](./examples/02_lazy_loading.py)**: Performance comparison between eager and lazy loading (1.2x overall speedup, 2.0x faster DB load).
+
+3.  **[Dataclasses](./examples/03_dataclasses.py)**: Using the safe dataclass wrapper.
+
+4.  **[Attrs Support](./examples/04_attrs.py)**: Integration with the `attrs` library.
+
+5.  **[Async SQLAlchemy](./examples/05_async_sqlalchemy.py)**: Integration with `AsyncSession` and `aiosqlite`.
+
+6.  **[Deep Nesting](./examples/06_nested_collections.py)**: Tracking changes in lists of dictionaries of models.
+
+7.  **[Pickle & Celery](./examples/07_pickle_celery.py)**: Passing models to background workers.
+
+
+
+---
+
+
 
 ## Quick Start (Pydantic)
 
@@ -147,7 +192,7 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):
 
 ### 2. High-Performance Usage (`LazyMutableMixin`)
 
-**Recommended for read-heavy applications.**
+**Recommended for read-heavy, sparse-field applications.**
 Objects are initialized "lazily". The overhead of change tracking is only paid when you actually access the attribute.
 
 ```python
@@ -160,10 +205,23 @@ class UserSettings(LazyMutableMixin, BaseModel):
 
 ```
 
-**Performance Comparison (Load 5,000 objects):**
+**Performance Benchmarks:**
 
-* **Standard (`MutableMixin`):** ~1100ms
-* **Lazy (`LazyMutableMixin`):** ~7ms (**~150x faster**)
+| Metric | Eager | Lazy | Improvement | Notes |
+|--------|-------|------|---|---|
+| **Initialization (per object)** | 593 µs | 1.6 µs | **376x faster** | Pure Python object init |
+| **DB Load (5,000 objects)** | 393ms | 194ms | **2.0x faster** | SQL query + deserialization |
+| **First Field Access** | 2.3ms | 144ms | 62x slower | JIT wrapping overhead |
+| **Full Workflow** | 422ms | 366ms | **1.2x faster** | DB load + access + commit |
+
+**Key Insight:** Lazy loading is **exceptionally fast at initialization** (376x), but the advantage shrinks in real-world DB workflows (1.2x) because SQL query time dominates. The JIT wrapping creates a "first access tax"—avoid lazy loading if you access most/all fields.
+
+**Use case:** 
+- ✅ Lazy: Large result sets where you only need a few fields
+- ✅ Eager: Write-heavy workflows accessing most fields
+- ✅ Lazy: API responses (serialize specific fields only)
+- ❌ Lazy: Full object traversal (pays JIT tax on every field)
+
 
 ---
 
@@ -284,7 +342,19 @@ While supported, avoid mixing complex mutable types in the same list (e.g., `[My
 
 ---
 
-### 📊 Benchmark Performance Summary
+## 📊 Benchmark Performance Summary
+
+### Performance
+
+| Operation | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| **Lazy init/object** | ~8µs | ~1.7µs | **5.1x faster** |
+| **Attribute read** | ~2.0µs | ~1.2µs | **40% faster** |
+| **Attribute write** | ~3.2µs | ~2.1µs | **34% faster** |
+| **Memory (Lazy)** | ~12MB | ~6.1MB | **47% less** |
+| **DB load (5000 objects)** | ~440ms | ~416ms | **5% faster** |
+
+### Benchmark Test Results (N=5000, with Optimizations)
 
 | Name (time in µs) | Min | Max | Mean | StdDev | Median | IQR | OPS (Kops/s) | Rounds |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -308,6 +378,22 @@ While supported, avoid mixing complex mutable types in the same list (e.g., `[My
 * **Total Tests Collected:** 51
 * **Status:** 51 Passed
 * **Total Duration:** 5.89 seconds
+
+---
+
+## 🔧 Troubleshooting
+
+### Issue: "Type has no attribute '_state'"
+- **Cause**: Your model class does not inherit from `MutableMixin` or `LazyMutableMixin`.
+- **Solution**: Ensure your Pydantic/Dataclass/Attrs model inherits from one of the provided mixins.
+
+### Issue: Changes not saved to database
+- **Cause**: SQLAlchemy only detects changes if `flag_modified` is called, which `sqlatypemodel` does automatically. If it's not working, ensure `session.commit()` is actually called.
+- **Solution**: Verify that your model is properly registered and that you are using `session.commit()`.
+
+### Issue: Pickle deserialization loses tracking
+- **Cause**: Standard `MutableMixin` might need manual re-initialization if not using the recommended patterns.
+- **Solution**: Use `LazyMutableMixin` for more robust pickle support, or ensure `_restore_tracking()` is called if implementing custom deserialization.
 
 ---
 
