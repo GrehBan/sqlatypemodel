@@ -12,14 +12,14 @@ This document describes the GitHub workflows configured for the sqlatypemodel pr
   - Dependency caching for faster builds
   - Concurrent job cancellation (prevents redundant runs)
   - Code coverage reporting to Codecov
-  - Linting (ruff), formatting (black), type checking (mypy)
+  - Linting & formatting (ruff), type checking (mypy)
 - **Duration**: ~5-10 minutes per Python version
 - **Status badge**: [![Tests](https://github.com/GrehBan/sqlatypemodel/actions/workflows/tests.yml/badge.svg)](https://github.com/GrehBan/sqlatypemodel/actions/workflows/tests.yml)
 
 ### 2. **lint.yml** - Code Quality Checks
 - **Trigger**: Push to `master`/`main`/`develop`, Pull Requests, Manual
 - **Features**:
-  - Parallel linting jobs (ruff, black, mypy, pre-commit)
+  - Parallel linting jobs (ruff, mypy, pre-commit)
   - Fast feedback on code quality issues
   - Separate jobs for easier debugging
 - **Duration**: ~3-5 minutes
@@ -117,8 +117,8 @@ You need the following secrets configured in GitHub:
 
 1. **Create Release Tag**:
    ```bash
-   git tag v0.8.2
-   git push origin v0.8.2
+   git tag v0.8.3
+   git push origin v0.8.3
    ```
 
 2. **Create GitHub Release**:
@@ -273,7 +273,7 @@ poetry run pytest -v
 
 # 2. Run linting
 poetry run ruff check src/sqlatypemodel tests
-poetry run black --check src/sqlatypemodel tests
+poetry run ruff format --check src/sqlatypemodel tests
 poetry run mypy src/sqlatypemodel
 
 # 3. Build distribution

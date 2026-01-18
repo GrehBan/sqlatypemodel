@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.3] - 2026-01-18
 
+### 🐛 Bug Fixes
+- **Concurrency**: Fixed a race condition in `test_concurrent_mutation_performance` where `threading.get_ident()` was used for dictionary keys. In some environments (like CI), thread IDs can be reused across fast-running threads, leading to key collisions. Switched to unique thread indices.
+
 ### 🔧 Infrastructure & Development
 
 #### CI/CD Pipelines (NEW)

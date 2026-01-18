@@ -215,7 +215,10 @@ class TestConcurrentMutationTracking:
         assert len(operation_counts) == 4
 
         # Verify data integrity
-        assert len(model.meta) > 1  # Should have more than initial key
+        # Each thread did 25 additions (some might be updates if we were unlucky with keys,
+        # but here keys are thread-unique)
+        expected_count = 4 * 25 + 1  # 4 threads * 25 keys + 1 initial
+        assert len(model.meta) == expected_count
 
         # Verify change tracking still works
         model.meta["final_key"] = "final_value"

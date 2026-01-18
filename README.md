@@ -31,7 +31,7 @@ Full documentation is available in the `docs/` directory:
   * **Universal Compatibility:** Works natively with **unhashable** objects (e.g., standard Pydantic models, `eq=True` Dataclasses).
   * **Zero Monkey-Patching:** No longer alters your class's `__hash__` or `__eq__` methods. Uses internal `MutableState` tokens for safe identity tracking.
 
-* **⚡ Maximum Performance (v0.8.2+ Optimized):**
+* **⚡ Maximum Performance (v0.8.3+ Optimized):**
   * **Hot Path Acceleration:** Direct `object.__getattribute__()` calls and type dispatch tables reduce overhead by 40%+.
   * **Lazy Loading:** 2.1x faster DB loading and 35% less memory usage.
   * **Pre-computed state** eliminates repeated lookups.
@@ -191,7 +191,7 @@ class UserSettings(LazyMutableMixin, BaseModel):
 
 ```
 
-**Performance Benchmarks (v0.8.2):**
+**Performance Benchmarks (v0.8.3):**
 
 | Metric | Eager | Lazy | Improvement | Notes |
 |--------|-------|------|---|---|

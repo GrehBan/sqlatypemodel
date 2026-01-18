@@ -319,7 +319,7 @@ Before contributing, ensure all checks pass locally:
 
     # Or manually:
     poetry run ruff check src/sqlatypemodel tests --fix
-    poetry run black src/sqlatypemodel tests
+    poetry run ruff format src/sqlatypemodel tests
     poetry run mypy src/sqlatypemodel
 
 Testing
@@ -344,7 +344,7 @@ GitHub Actions
 All code is automatically tested via GitHub Actions:
 
 - **tests.yml**: Tests on Python 3.10-3.14 with databases
-- **lint.yml**: Code quality checks (ruff, black, mypy, pre-commit)
+- **lint.yml**: Code quality checks (ruff, mypy, pre-commit)
 - **security.yml**: Weekly security scanning
 - **docs.yml**: Documentation building
 - **publish.yml**: Automated PyPI publishing on release

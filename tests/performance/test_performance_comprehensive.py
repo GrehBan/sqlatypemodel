@@ -422,22 +422,21 @@ class TestConcurrencyPerformance:
         errors = []
         lock = threading.Lock()
 
-        def mutate_model():
+        def mutate_model(thread_idx: int):
             try:
-                ident = threading.get_ident()
                 for i in range(mutations_per_thread):
                     with lock:
-                        model.tags.append(f"thread_{ident}_{i}")
-                    # Use unique key per thread to avoid overwrite collisions
-                    model.settings[f"key_{ident}_{i}"] = f"value_{i}"
+                        model.tags.append(f"thread_{thread_idx}_{i}")
+                        # Use unique key per thread to avoid overwrite collisions
+                        model.settings[f"key_{thread_idx}_{i}"] = f"value_{i}"
             except Exception as e:
                 errors.append(e)
 
         start_time = time.perf_counter()
 
         threads = []
-        for _ in range(thread_count):
-            t = threading.Thread(target=mutate_model)
+        for i in range(thread_count):
+            t = threading.Thread(target=mutate_model, args=(i,))
             threads.append(t)
             t.start()
 
