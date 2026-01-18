@@ -163,7 +163,7 @@ class TestMemoryLeakDetection:
 
         def create_and_modify_models(thread_id: int) -> None:
             thread_models = []
-            for i in range(100):
+            for _ in range(100):
                 model = MemoryEagerModel(
                     data=[f"thread_{thread_id}_item_{j}" for j in range(20)],
                     tags={f"thread_{thread_id}_tag_{j}" for j in range(10)},
@@ -313,8 +313,10 @@ class TestGarbageCollectionPatterns:
             if weak1() is None and weak2() is None:
                 break
 
-        # At least test that no memory error occurs
-        assert True
+        # Verify that we can still access the references without error
+        # Even if not collected yet, accessing them shouldn't crash
+        _ = weak1()
+        _ = weak2()
 
     def test_large_object_cleanup(self) -> None:
         """Test cleanup of large objects with many references."""
@@ -460,7 +462,7 @@ class TestLongRunningProcess:
             models = []
 
             # Create and use models
-            for i in range(100):
+            for _ in range(100):
                 model = MemoryEagerModel(
                     data=[f"iter_{iteration}_item_{j}" for j in range(5)],
                     nested={"iteration": iteration},

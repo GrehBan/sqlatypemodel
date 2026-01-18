@@ -11,7 +11,7 @@ from sqlalchemy.ext.mutable import MutableDict, MutableList, MutableSet
 
 from sqlatypemodel.mixin import events, inspection
 from sqlatypemodel.mixin._introspection_data import _ATOMIC_TYPES
-from sqlatypemodel.mixin.protocols import Trackable
+from sqlatypemodel.mixin.protocols import MutableMixinProto, Trackable
 from sqlatypemodel.mixin.state import MutableState
 from sqlatypemodel.mixin.types import (
     KeyableMutableDict,
@@ -250,6 +250,47 @@ def is_mutable_and_untracked(obj: Any) -> bool:
     return inspection.is_pydantic(obj)
 
 
+def _relink_collection(
+    parent_state: MutableState[Any],
+    attr_name: str | int,
+    collection: MutableList[Any] | MutableDict[Any, Any] | MutableSet[Any],
+) -> None:
+    """Relink a collection and its items to their states (internal)."""
+    if not hasattr(collection, "_parents"):
+        return
+
+    collection._parents[parent_state] = attr_name
+
+    coll_state = getattr(collection, "_state", None)
+    if not isinstance(coll_state, MutableState):
+        return
+
+    if isinstance(collection, MutableList):
+        for i, item in enumerate(collection):
+            if isinstance(item, MutableMixinProto):
+                item._relink_to_parent(coll_state, i)
+    elif isinstance(collection, MutableDict):
+        for k, v in collection.items():
+            if isinstance(v, MutableMixinProto):
+                v._relink_to_parent(coll_state, k)
+
+
+def _relink_attribute(
+    parent_state: MutableState[Any],
+    attr_name: str | int,
+    attr_value: Any,
+    _seen: dict[int, Any],
+) -> None:
+    """Relink a single attribute to its parent state (internal)."""
+    if hasattr(attr_value, "_relink_to_parent"):
+        attr_value._relink_to_parent(parent_state, attr_name)
+        relink_descendants(attr_value, _seen=_seen)
+        return
+
+    if isinstance(attr_value, MutableList | MutableDict | MutableSet):
+        _relink_collection(parent_state, attr_name, attr_value)
+
+
 def relink_descendants(
     parent: Any, _seen: dict[int, Any] | None = None
 ) -> None:
@@ -267,30 +308,46 @@ def relink_descendants(
         return
 
     attrs = inspection.extract_attrs_to_scan(parent)
+    parent_type = type(parent)
     for attr_name, attr_value in attrs.items():
-        if inspection.ignore_attr_name(type(parent), attr_name):
+        if inspection.ignore_attr_name(parent_type, attr_name):
             continue
+        _relink_attribute(state, attr_name, attr_value, _seen)
 
-        if hasattr(attr_value, "_relink_to_parent"):
-            attr_value._relink_to_parent(state, attr_name)
-            relink_descendants(attr_value, _seen=_seen)
-        elif isinstance(attr_value, MutableList | MutableDict | MutableSet):
-            if hasattr(attr_value, "_parents"):
-                attr_value._parents[state] = attr_name
-                from sqlatypemodel.mixin.protocols import MutableMixinProto
 
-                if isinstance(attr_value, MutableList):
-                    coll_state = getattr(attr_value, "_state", None)
-                    if isinstance(coll_state, MutableState):
-                        for i, item in enumerate(attr_value):
-                            if isinstance(item, MutableMixinProto):
-                                item._relink_to_parent(coll_state, i)
-                elif isinstance(attr_value, MutableDict):
-                    coll_state = getattr(attr_value, "_state", None)
-                    if isinstance(coll_state, MutableState):
-                        for k, v in attr_value.items():
-                            if isinstance(v, MutableMixinProto):
-                                v._relink_to_parent(coll_state, k)
+def _scan_and_wrap_single_field(
+    parent: Any,
+    attr_name: str,
+    attr_value: Any,
+    _seen: dict[int, Any],
+    max_depth: int,
+) -> None:
+    """Wrap a single field if necessary (internal)."""
+    if attr_value is None or attr_name.startswith("_"):
+        return
+    if inspection.ignore_attr_name(type(parent), attr_name):
+        return
+
+    try:
+        wrapped = wrap_mutable(
+            parent,
+            attr_value,
+            _seen,
+            key=attr_name,
+            max_depth_limit=max_depth,
+        )
+
+        if wrapped is not attr_value:
+            object.__setattr__(parent, attr_name, wrapped)
+
+        if hasattr(wrapped, "_restore_tracking"):
+            wrapped._restore_tracking(_seen=_seen)
+    except (AttributeError, TypeError) as e:
+        logger.debug("Failed to wrap attribute %s: %s", attr_name, e)
+    except Exception as e:
+        logger.warning(
+            "Unexpected error wrapping attribute %s: %s", attr_name, e
+        )
 
 
 def scan_and_wrap_fields(
@@ -306,7 +363,6 @@ def scan_and_wrap_fields(
     _seen[self_id] = parent
 
     attrs = inspection.extract_attrs_to_scan(parent)
-    parent_cls = type(parent)
 
     # Resolve max_depth once at root scan
     max_depth = getattr(
@@ -314,30 +370,6 @@ def scan_and_wrap_fields(
     )
 
     for attr_name, attr_value in attrs.items():
-        if attr_value is None:
-            continue
-        if attr_name.startswith("_"):
-            continue
-        if inspection.ignore_attr_name(parent_cls, attr_name):
-            continue
-
-        try:
-            wrapped = wrap_mutable(
-                parent,
-                attr_value,
-                _seen,
-                key=attr_name,
-                max_depth_limit=max_depth,
-            )
-
-            if wrapped is not attr_value:
-                object.__setattr__(parent, attr_name, wrapped)
-
-            if hasattr(wrapped, "_restore_tracking"):
-                wrapped._restore_tracking(_seen=_seen)
-        except (AttributeError, TypeError) as e:
-            logger.debug("Failed to wrap attribute %s: %s", attr_name, e)
-        except Exception as e:
-            logger.warning(
-                "Unexpected error wrapping attribute %s: %s", attr_name, e
-            )
+        _scan_and_wrap_single_field(
+            parent, attr_name, attr_value, _seen, max_depth
+        )

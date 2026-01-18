@@ -37,18 +37,10 @@ def _get_parents_snapshot(
     return None
 
 
-def _propagate_to_parent(parent_ref: Any, key: Any) -> bool:
-    """Propagate change to a single parent. Returns True on success."""
-    # Dereference MutableState (common case, check first)
-    if isinstance(parent_ref, MutableState):
-        parent = parent_ref.ref()
-    else:
-        parent = parent_ref
+def _try_propagate_via_changed(parent: Any) -> bool | None:
+    """Try to call 'changed' method.
 
-    if parent is None:
-        return True
-
-    # Try to call changed method (most common path)
+    Returns True/False if handled, None otherwise."""
     changed_method = getattr(parent, "changed", None)
     if changed_method is not None:
         try:
@@ -62,8 +54,11 @@ def _propagate_to_parent(parent_ref: Any, key: Any) -> bool:
                 exc_info=True,
             )
             return False
+    return None
 
-    # Fallback: try to get obj() method (SQLAlchemy InstanceState)
+
+def _try_propagate_via_obj_method(parent: Any, key: Any) -> bool | None:
+    """Try to call 'obj' method (SQLAlchemy InstanceState)."""
     obj_method = getattr(parent, "obj", None)
     if obj_method is not None and callable(obj_method):
         try:
@@ -74,8 +69,11 @@ def _propagate_to_parent(parent_ref: Any, key: Any) -> bool:
         except Exception as e:
             logger.error("Error flagging modified on SA model: %s", e)
             return False
+    return None
 
-    # Last resort: flag_modified on parent directly
+
+def _try_propagate_via_flag_modified(parent: Any, key: Any) -> bool:
+    """Last resort: flag_modified on parent directly."""
     if key:
         try:
             flag_modified(parent, key)
@@ -84,6 +82,29 @@ def _propagate_to_parent(parent_ref: Any, key: Any) -> bool:
             logger.error("Error flagging modified on SA model: %s", e)
             return False
     return True
+
+
+def _propagate_to_parent(parent_ref: Any, key: Any) -> bool:
+    """Propagate change to a single parent. Returns True on success."""
+    # Dereference MutableState (common case, check first)
+    if isinstance(parent_ref, MutableState):
+        parent = parent_ref.ref()
+    else:
+        parent = parent_ref
+
+    if parent is None:
+        return True
+
+    # Try each strategy in order
+    res = _try_propagate_via_changed(parent)
+    if res is not None:
+        return res
+
+    res = _try_propagate_via_obj_method(parent, key)
+    if res is not None:
+        return res
+
+    return _try_propagate_via_flag_modified(parent, key)
 
 
 def safe_changed(
