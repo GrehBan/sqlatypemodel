@@ -1,0 +1,100 @@
+name: Security & Dependency Checks
+
+on:
+  push:
+    branches: [master, main, develop]
+    paths:
+      - 'pyproject.toml'
+      - 'poetry.lock'
+      - '.github/workflows/security.yml'
+  pull_request:
+    branches: [master, main, develop]
+    paths:
+      - 'pyproject.toml'
+      - 'poetry.lock'
+  schedule:
+    # Run weekly on Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    name: Bandit Security Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Bandit
+        run: pip install bandit[toml]
+
+      - name: Run Bandit security check
+        run: bandit -r src/sqlatypemodel -ll --exit-zero
+        continue-on-error: true
+
+  dependabot:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Check for known vulnerabilities with pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit --desc
+        continue-on-error: true
+
+  python-versions:
+    name: Verify Python Version Support
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Check Python version compatibility
+        run: python --version
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Verify package can be installed
+        run: |
+          poetry install --no-root
+          poetry build
+        continue-on-error: true

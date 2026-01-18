@@ -1,9 +1,11 @@
-"""
-Example 05: Asynchronous SQLAlchemy Usage
+"""Example 05: Asynchronous SQLAlchemy Usage.
 
-Demonstrates integration with SQLAlchemy's AsyncSession using
-the create_async_engine helper.
+Demonstrates integration with SQLAlchemy's `AsyncSession` and `aiosqlite`
+using the `create_async_engine` helper. Mutation tracking works seamlessly
+in async contexts.
 """
+
+from __future__ import annotations
 
 import asyncio
 
@@ -17,21 +19,28 @@ from sqlatypemodel.util.sqlalchemy import create_async_engine
 
 
 class TaskData(MutableMixin, BaseModel):
+    """Task data model with mutation tracking."""
+
     priority: int = 0
     assigned_to: str | None = None
 
 
 class Base(DeclarativeBase):
+    """Base SQLAlchemy model."""
+
     pass
 
 
 class Task(Base):
+    """Task entity."""
+
     __tablename__ = "tasks"
     id: Mapped[int] = mapped_column(primary_key=True)
     data: Mapped[TaskData] = mapped_column(ModelType(TaskData))
 
 
-async def run_async_example():
+async def run_async_example() -> None:
+    """Run the async SQLAlchemy example."""
     # Use create_async_engine helper with StaticPool
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",

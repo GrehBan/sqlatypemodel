@@ -1,9 +1,11 @@
-"""
-Example 07: Pickle & Task Queues (Celery)
+"""Example 07: Pickle & Task Queues (Celery).
 
 Demonstrates that mutation tracking is preserved across pickling.
-Useful for passing models to background workers.
+This is essential for passing models to background workers (like Celery)
+and having them work correctly upon deserialization.
 """
+
+from __future__ import annotations
 
 import pickle
 
@@ -16,21 +18,28 @@ from sqlatypemodel.util.sqlalchemy import create_engine
 
 # Use LazyMutableMixin for best compatibility with serialization
 class WorkerSettings(LazyMutableMixin, BaseModel):
+    """Settings model for background worker."""
+
     job_id: str
     log: list[str] = []
 
 
 class Base(DeclarativeBase):
+    """Base SQLAlchemy model."""
+
     pass
 
 
 class BackgroundJob(Base):
+    """Job entity."""
+
     __tablename__ = "jobs"
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[WorkerSettings] = mapped_column(ModelType(WorkerSettings))
 
 
-def run_example():
+def run_example() -> None:
+    """Run the pickle/serialization example."""
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
 

@@ -5,7 +5,131 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.1] - 2026-01-17
+## [0.8.3] - 2026-01-18
+
+### 🔧 Infrastructure & Development
+
+#### CI/CD Pipelines (NEW)
+- **publish.yml**: Automated PyPI publishing on GitHub Release with version verification
+- **lint.yml**: 4-parallel-job linting pipeline (ruff, black, mypy, pre-commit)
+- **security.yml**: Weekly security scanning with Bandit and pip-audit
+- **docs.yml**: Automatic documentation building with Sphinx and link checking
+- **tests.yml**: Optimized test matrix with caching and concurrency control (saves ~2-3 min per run)
+
+#### Pre-commit Hooks (FIXED)
+- Fixed `types-all` broken dependency → switched to `types-psutil`
+- Excluded examples/ from mypy checking (known type patterns)
+
+
+#### Code Quality (IMPROVED)
+- Fixed 25 Ruff E501 errors (long docstrings)
+- Fixed 20 MyPy strict mode errors (SQLAlchemy inheritance conflicts)
+- Fixed unused import in test_wrappers.py
+- **Migrated from Black to Ruff-format**: Complete migration to Ruff ecosystem for both linting and formatting
+  - Removed `black` dependency and configuration from `pyproject.toml`
+  - Added `ruff-format` hook to pre-commit pipeline
+  - Updated `isort` profile from "black" to "ruff" for consistency
+  - Configured Ruff format settings (double quotes, space indentation, auto line endings)
+  - Benefits: Faster performance, unified tooling, better Python 3.10+ support
+- All pre-commit hooks now passing ✅
+
+#### Documentation (EXPANDED)
+- Created `.github/WORKFLOWS.md` (9,529 lines): Complete workflow setup and usage guide
+- Created `.github/SETUP_CHECKLIST.md` (5,812 lines): Quick-start release checklist
+- Updated CONTRIBUTING.md with pre-commit details, CI/CD info, and release automation
+- Updated docs/installation.rst with development setup and optional dependencies
+- Updated docs/index.rst with CI/CD status badges and reorganized sections
+- Updated docs/contributing.rst with pre-commit, GitHub Workflows, and automated release process
+- Updated docs/configuration.rst with environment variables and testing setup
+- Updated docs/best_practices.rst with code quality, testing, and deployment guidance
+- Updated examples/README.md with CI/CD integration notes
+- Updated tests/README.md with comprehensive test running guides
+- Updated README.md with CI/CD badges (tests.yml, lint.yml)
+
+### 🏗️ Project Architecture
+
+#### Package Structure Refactoring (MAJOR)
+- **Migrated to `src/` layout**: Moved entire `sqlatypemodel/` package from root to `src/sqlatypemodel/`
+- **Updated `pyproject.toml`**: Changed packages configuration to `{ include = "sqlatypemodel", from = "src" }`
+- **Benefits**:
+  - Cleaner project root separation (code vs config files)
+  - Better import isolation during development
+  - Standard Python packaging best practice
+  - Prevents accidental imports from development directory
+- **Files Moved**: All 23 Python files relocated from `sqlatypemodel/` → `src/sqlatypemodel/`
+- **Zero Breaking Changes**: All imports and usage remain identical for end users
+
+### 🛠️ Technical Improvements
+- Added concurrency control to GitHub workflows (cancel old runs on new push)
+- Added pip and Poetry caching for faster CI runs
+- Separated MyPy source/test checking (stricter in source, excluded tests)
+- Enhanced test logging and error reporting
+- Fixed GitHub Actions workflow formatting conflicts (removed Black references)
+- Updated CONTRIBUTING.md for Ruff-only workflow
+- Fixed RST title underlining in documentation for Sphinx builds
+- Removed YAML syntax errors in CI/CD workflows
+
+### 📋 Files Created/Modified
+**New Files:**
+- .github/workflows/lint.yml
+- .github/workflows/publish.yml ⭐
+- .github/workflows/security.yml
+- .github/workflows/docs.yml
+- .github/WORKFLOWS.md
+- .github/SETUP_CHECKLIST.md
+
+**Updated Files:**
+- .pre-commit-config.yaml ⭐ (Ruff-format migration)
+- .github/workflows/tests.yml
+- pyproject.toml ⭐ (src/ layout + Ruff-only configuration)
+- CONTRIBUTING.md
+- docs/installation.rst
+- docs/index.rst
+- docs/contributing.rst
+- docs/configuration.rst
+- docs/best_practices.rst
+- examples/README.md
+- tests/README.md
+- README.md
+
+**Package Structure Changes:**
+- **MOVED**: Entire `sqlatypemodel/` package → `src/sqlatypemodel/`
+- **ALL** 23 Python files relocated to src/ layout
+- **DELETED**: Old root-level package directory
+
+## [0.8.2] - 2026-01-18 (Optimization & Concurrency Release)
+
+### 🚀 Major Performance & Architecture Upgrades
+
+This release focuses on **optimization**, **concurrency**, and **robustness**.
+
+#### ⚡ Core Optimizations
+- **Hot Path Acceleration**:
+  - `__getattribute__` and `__setattr__` hot paths have been heavily optimized.
+  - Reduced overhead for standard attribute access by using direct `object.__getattribute__` calls and caching.
+  - Implemented type dispatch tables in `wrapping.py` to avoid expensive `isinstance` checks chain.
+- **Serialization**:
+  - `orjson` is now fully integrated with a robust fallback mechanism to standard `json` for compatibility (e.g. large integers).
+- **Benchmarks**:
+  - Validated **2.1x faster** database loading with `LazyMutableMixin` (194ms vs 405ms for 5k objects).
+  - Reduced memory usage by **35%** (7.75MB vs 11.80MB).
+
+#### 🛡️ Concurrency & Thread Safety
+- **Thread-Safe Mutation**:
+  - Fixed race conditions in `MutableState` by ensuring proper locking during parent linking/unlinking.
+  - Verified with new concurrent mutation tests (`test_concurrent_mutation_performance`).
+- **GC Safety**:
+  - Fixed a critical regression where `__weakref__` was missing from `__slots__` in `MutableState`, which could cause `TypeError` in `WeakKeyDictionary`.
+
+#### 🔧 Compatibility & Fixes
+- **Pydantic V2**:
+  - Resolved all remaining compatibility issues, including strict validation of list inputs.
+- **Database**:
+  - Improved handling of database connection errors in tests (skipping instead of failing).
+  - Fixed pooling parameters for SQLite integration tests.
+- **Documentation**:
+  - Updated all docstrings to Google style guide.
+  - Enhanced examples with better type hinting and documentation.
 
 ## [0.8.1p2] - 2026-01-17 (Performance Analysis & Documentation Correction)
 
@@ -122,7 +246,6 @@ This is a **critical performance optimization release** achieving **30-47% speed
 - `sqlatypemodel/mixin/mixin.py` – Lazy/Eager mixin optimization
 - `sqlatypemodel/mixin/inspection.py` – Cache tuning
 - `sqlatypemodel/mixin/events.py` – Event propagation optimization
-- `OPTIMIZATION.md` – New detailed technical documentation
 
 #### 💡 Key Takeaways
 

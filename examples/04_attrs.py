@@ -1,9 +1,11 @@
-"""
-Example 04: Attrs Integration
+"""Example 04: Attrs Integration.
 
-This example shows how to use `attrs` classes with MutableMixin.
-We use the safe `sqlatypemodel.util.attrs.define` wrapper.
+This example shows how to use `attrs` classes with `MutableMixin`.
+We use the safe `sqlatypemodel.util.attrs.define` wrapper to ensure proper
+initialization and tracking.
 """
+
+from __future__ import annotations
 
 from attrs import asdict
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
@@ -17,15 +19,21 @@ from sqlatypemodel.util.sqlalchemy import create_engine
 
 @define
 class AppState(MutableMixin):
+    """Application state with mutation tracking."""
+
     status: str
     counts: dict[str, int]
 
 
 class Base(DeclarativeBase):
+    """Base SQLAlchemy model."""
+
     pass
 
 
 class Application(Base):
+    """Application entity with state."""
+
     __tablename__ = "apps"
     id: Mapped[int] = mapped_column(primary_key=True)
     state: Mapped[AppState] = mapped_column(
@@ -33,7 +41,8 @@ class Application(Base):
     )
 
 
-def run_example():
+def run_example() -> None:
+    """Run the attrs integration example."""
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
 

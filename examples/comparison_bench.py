@@ -1,3 +1,11 @@
+"""
+Benchmark comparing Eager vs Lazy loading performance.
+
+Measures memory usage and execution time for bulk operations to demonstrate
+the performance characteristics of `MutableMixin` (Eager) vs
+`LazyMutableMixin`.
+"""
+
 from __future__ import annotations
 
 import gc
@@ -14,32 +22,46 @@ from sqlatypemodel.util.sqlalchemy import create_engine
 
 
 class NestedModel(BaseModel):
+    """Simple nested model."""
+
     id: int
     data: list[int] = Field(default_factory=lambda: list(range(10)))
-    meta: dict[str, str] = {"key": "value", "type": "test"}
+    meta: dict[str, str] = Field(
+        default_factory=lambda: {"key": "value", "type": "test"}
+    )
 
 
 class EagerSettings(MutableMixin, BaseModel):
+    """Eagerly loaded settings."""
+
     label: str = "benchmark"
     items: list[NestedModel] = Field(default_factory=list)
 
 
 class LazySettings(LazyMutableMixin, BaseModel):
+    """Lazily loaded settings."""
+
     label: str = "benchmark"
     items: list[NestedModel] = Field(default_factory=list)
 
 
 class Base(DeclarativeBase):
+    """Base SQLAlchemy model."""
+
     pass
 
 
 class EagerEntity(Base):
+    """Entity with eager settings."""
+
     __tablename__ = "eager_entities"
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[EagerSettings] = mapped_column(ModelType(EagerSettings))
 
 
 class LazyEntity(Base):
+    """Entity with lazy settings."""
+
     __tablename__ = "lazy_entities"
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[LazySettings] = mapped_column(ModelType(LazySettings))
@@ -48,18 +70,27 @@ class LazyEntity(Base):
 # --- BENCHMARK LOGIC ---
 
 
-def get_memory():
-    """Simple memory usage helper (Linux/macOS)."""
+def get_memory() -> float:
+    """Get current process memory usage in MB.
+
+    Returns:
+        Memory usage in Megabytes.
+    """
     try:
         import psutil
 
         process = psutil.Process()
         return process.memory_info().rss / 1024 / 1024  # MB
     except ImportError:
-        return 0
+        return 0.0
 
 
-def run_detailed_bench(count: int = 5000):
+def run_detailed_bench(count: int = 5000) -> None:
+    """Run detailed performance benchmark.
+
+    Args:
+        count: Number of objects to create/load.
+    """
     print(f"--- sqlatypemodel detailed comparison (N={count}) ---")
 
     engine = create_engine("sqlite:///:memory:")

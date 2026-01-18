@@ -2,47 +2,121 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: [master, main, develop]
   pull_request:
-    branches: [main]
+    branches: [master, main, develop]
   workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test
+          MYSQL_USER: test
+          MYSQL_PASSWORD: test
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 3306:3306
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Install Poetry
-      run: |
-        curl -sSL https://install.python-poetry.org | python3 -
-    
-    - name: Install dependencies
-      run: |
-        poetry install
-        
-    - name: Run linting (ruff)
-      run: |
-        poetry run ruff check sqlatypemodel tests
-        
-    - name: Run formatting check (black)
-      run: |
-        poetry run black --check sqlatypemodel tests
-        
-    - name: Run type checking (mypy)
-      run: |
-        poetry run mypy sqlatypemodel
-        
-    - name: Run unit tests
-      run: |
-        poetry run pytest --cov=sqlatypemodel
-  
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+          cache: 'pip'
+
+      - name: Cache Poetry installation
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/poetry
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Install package
+        run: poetry install
+
+      - name: Run linting (ruff)
+        run: poetry run ruff check src/sqlatypemodel tests
+
+      - name: Run formatting check (ruff-format)
+        run: poetry run ruff format --check src/sqlatypemodel tests
+
+      - name: Run type checking (mypy)
+        run: poetry run mypy src/sqlatypemodel
+
+      - name: Run unit tests
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_USER: test
+          MYSQL_PASSWORD: test
+          MYSQL_DB: test
+        run: >
+          poetry run pytest
+          -v
+          --cov=sqlatypemodel
+          --cov-report=xml
+          --cov-report=term-missing
+          --tb=short
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: true
+          verbose: true

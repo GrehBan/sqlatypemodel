@@ -1,10 +1,12 @@
-"""
-Example 03: Python Dataclasses Support
+"""Example 03: Python Dataclasses Support.
 
-Using the safe `sqlatypemodel.util.dataclasses.dataclass` wrapper ensures
-compatibility with SQLAlchemy's mutable system by disabling recursion-prone
-defaults like eq=True.
+Demonstrates using Python `dataclasses` with `MutableMixin`.
+Using the safe `sqlatypemodel.util.dataclasses.dataclass` wrapper is
+recommended to ensure compatibility with SQLAlchemy's mutable system by
+disabling recursion-prone defaults like `eq=True`.
 """
+
+from __future__ import annotations
 
 from dataclasses import asdict
 
@@ -20,16 +22,22 @@ from sqlatypemodel.util.sqlalchemy import create_engine
 # 1. Define Dataclass
 @dataclass
 class Config(MutableMixin):
+    """Configuration dataclass with mutation tracking."""
+
     host: str
     port: int
     retries: int = 3
 
 
 class Base(DeclarativeBase):
+    """Base SQLAlchemy model."""
+
     pass
 
 
 class Server(Base):
+    """Server entity with configuration."""
+
     __tablename__ = "servers"
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -39,7 +47,8 @@ class Server(Base):
     )
 
 
-def run_example():
+def run_example() -> None:
+    """Run the dataclasses example."""
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
 

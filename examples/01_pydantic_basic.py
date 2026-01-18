@@ -1,9 +1,13 @@
-"""
-Example 01: Basic Pydantic Integration
+"""Example 01: Basic Pydantic Integration.
 
 This example demonstrates how to use Pydantic models as SQLAlchemy columns
-with automatic mutation tracking.
+with automatic mutation tracking. It shows:
+1. Defining a Pydantic model with `MutableMixin`.
+2. Mapping it to a SQLAlchemy entity using `ModelType`.
+3. Persisting changes automatically.
 """
+
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
@@ -14,6 +18,8 @@ from sqlatypemodel.util.sqlalchemy import create_engine
 
 # 1. Define your Pydantic Model (Inherit from MutableMixin)
 class UserSettings(MutableMixin, BaseModel):
+    """User settings model with mutation tracking."""
+
     theme: str = "light"
     notifications: bool = True
     tags: list[str] = Field(default_factory=list)
@@ -21,10 +27,14 @@ class UserSettings(MutableMixin, BaseModel):
 
 # 2. Define your SQLAlchemy Entity
 class Base(DeclarativeBase):
+    """Base SQLAlchemy model."""
+
     pass
 
 
 class User(Base):
+    """User entity containing settings."""
+
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -32,7 +42,8 @@ class User(Base):
     settings: Mapped[UserSettings] = mapped_column(ModelType(UserSettings))
 
 
-def run_example():
+def run_example() -> None:
+    """Run the basic Pydantic integration example."""
     # Use our helper to get optimized orjson configuration
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
