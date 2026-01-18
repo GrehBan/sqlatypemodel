@@ -14,6 +14,8 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      SQLATYPEMODEL_FORCE_ORJSON: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -79,10 +81,10 @@ jobs:
             ${{ runner.os }}-poetry-${{ matrix.python-version }}-
 
       - name: Install dependencies
-        run: poetry install --no-root
+        run: poetry install --no-root --all-extras
 
       - name: Install package
-        run: poetry install
+        run: poetry install --all-extras
 
       - name: Run linting (ruff)
         run: poetry run ruff check src/sqlatypemodel tests

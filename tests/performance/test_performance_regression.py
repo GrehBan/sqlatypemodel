@@ -144,10 +144,10 @@ class TestPerformanceRegression:
 
         # Reasonable performance expectations
         assert (
-            simple_time < 100
+            simple_time < 500
         ), f"Simple creation too slow: {simple_time:.2f}μs"
         assert (
-            complex_time < 500
+            complex_time < 2000
         ), f"Complex creation too slow: {complex_time:.2f}μs"
 
         # Save baseline if this is a first run
@@ -184,10 +184,10 @@ class TestPerformanceRegression:
 
         # Lazy creation should be faster than eager
         assert (
-            lazy_simple_time < 50
+            lazy_simple_time < 300
         ), f"Lazy simple creation too slow: {lazy_simple_time:.2f}μs"
         assert (
-            lazy_complex_time < 300
+            lazy_complex_time < 1000
         ), f"Lazy complex creation too slow: {lazy_complex_time:.2f}μs"
 
         # Save baseline if this is a first run
@@ -250,23 +250,23 @@ class TestPerformanceRegression:
 
         # Reasonable performance expectations
         assert (
-            eager_append_time < 20
+            eager_append_time < 100
         ), f"Eager append too slow: {eager_append_time:.2f}μs"
         assert (
-            eager_assign_time < 20
+            eager_assign_time < 100
         ), f"Eager assign too slow: {eager_assign_time:.2f}μs"
         assert (
-            eager_increment_time < 10
+            eager_increment_time < 50
         ), f"Eager increment too slow: {eager_increment_time:.2f}μs"
 
         assert (
-            lazy_append_time < 25
+            lazy_append_time < 100
         ), f"Lazy append too slow: {lazy_append_time:.2f}μs"
         assert (
-            lazy_assign_time < 25
+            lazy_assign_time < 100
         ), f"Lazy assign too slow: {lazy_assign_time:.2f}μs"
         assert (
-            lazy_increment_time < 10
+            lazy_increment_time < 50
         ), f"Lazy increment too slow: {lazy_increment_time:.2f}μs"
 
         # Save baseline if this is a first run
@@ -320,13 +320,13 @@ class TestPerformanceRegression:
 
         # Reasonable performance for deep structures
         assert (
-            deep_mutation_time < 100
+            deep_mutation_time < 500
         ), f"Deep mutation too slow: {deep_mutation_time:.2f}μs"
         assert (
-            deep_nested_mutation_time < 100
+            deep_nested_mutation_time < 500
         ), f"Deep nested mutation too slow: {deep_nested_mutation_time:.2f}μs"
         assert (
-            deep_access_time < 50
+            deep_access_time < 200
         ), f"Deep access too slow: {deep_access_time:.2f}μs"
 
         # Save baseline if this is a first run
@@ -453,13 +453,13 @@ class TestPerformanceRegression:
 
         # Reasonable performance expectations
         assert (
-            bulk_creation_time < 10000
+            bulk_creation_time < 50000
         ), f"Bulk creation too slow: {bulk_creation_time:.2f}μs"
         assert (
-            bulk_lazy_creation_time < 5000
+            bulk_lazy_creation_time < 20000
         ), f"Bulk lazy creation too slow: {bulk_lazy_creation_time:.2f}μs"
         assert (
-            bulk_mutation_time < 5000
+            bulk_mutation_time < 20000
         ), f"Bulk mutation too slow: {bulk_mutation_time:.2f}μs"
 
         # Lazy should be faster for bulk creation

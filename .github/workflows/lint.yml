@@ -15,6 +15,8 @@ jobs:
   lint:
     name: Lint with Ruff
     runs-on: ubuntu-latest
+    env:
+      SQLATYPEMODEL_FORCE_ORJSON: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +33,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: poetry install --no-root
+        run: poetry install --no-root --all-extras
 
       - name: Run ruff check
         run: poetry run ruff check src/sqlatypemodel tests
@@ -42,6 +44,8 @@ jobs:
   type-check:
     name: Type Check with MyPy
     runs-on: ubuntu-latest
+    env:
+      SQLATYPEMODEL_FORCE_ORJSON: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +62,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: poetry install --no-root
+        run: poetry install --no-root --all-extras
 
       - name: Run mypy
         run: poetry run mypy src/sqlatypemodel
@@ -66,6 +70,8 @@ jobs:
   pre-commit:
     name: Pre-commit Hooks
     runs-on: ubuntu-latest
+    env:
+      SQLATYPEMODEL_FORCE_ORJSON: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -82,7 +88,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: poetry install --no-root
+        run: poetry install --no-root --all-extras
 
       - name: Run pre-commit
         run: poetry run pre-commit run --all-files

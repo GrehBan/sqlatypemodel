@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -17,14 +18,23 @@ logger = logging.getLogger(__name__)
 
 orjson: Any
 
-try:
-    import orjson as _orjson
+HAS_ORJSON = False
+if os.getenv("SQLATYPEMODEL_NO_ORJSON", "0") != "1":
+    try:
+        import orjson as _orjson
 
-    orjson = _orjson
-    HAS_ORJSON = True
-except ImportError:
-    HAS_ORJSON = False
+        orjson = _orjson
+        HAS_ORJSON = True
+    except ImportError:
+        orjson = None
+else:
     orjson = None
+
+if not HAS_ORJSON and os.getenv("SQLATYPEMODEL_FORCE_ORJSON", "0") == "1":
+    raise ImportError(
+        "orjson is required but not found or disabled via "
+        "SQLATYPEMODEL_NO_ORJSON while SQLATYPEMODEL_FORCE_ORJSON=1."
+    )
 
 __all__ = ("get_serializers",)
 

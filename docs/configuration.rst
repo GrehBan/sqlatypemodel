@@ -76,6 +76,9 @@ You can control behavior via environment variables:
     # Disable orjson and use stdlib json
     export SQLATYPEMODEL_NO_ORJSON=1
 
+    # Force orjson (raises ImportError if orjson is missing or disabled)
+    export SQLATYPEMODEL_FORCE_ORJSON=1
+
 Testing Configuration
 ---------------------
 
