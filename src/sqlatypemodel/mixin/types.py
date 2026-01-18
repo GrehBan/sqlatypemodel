@@ -13,19 +13,19 @@ _KT = TypeVar("_KT")
 _VT = TypeVar("_VT")
 
 
-class KeyableMutableList(MutableMethods, MutableList[_T]):  # type: ignore[misc]
+class KeyableMutableList(MutableList[_T], MutableMethods):  # type: ignore[misc]
     """MutableList that uses identity hashing and custom change tracking."""
 
     pass
 
 
-class KeyableMutableDict(MutableMethods, MutableDict[_KT, _VT]):  # type: ignore[misc]
+class KeyableMutableDict(MutableDict[_KT, _VT], MutableMethods):  # type: ignore[misc]
     """MutableDict that uses identity hashing and custom change tracking."""
 
     pass
 
 
-class KeyableMutableSet(MutableMethods, MutableSet[_T]):  # type: ignore[misc]
+class KeyableMutableSet(MutableSet[_T], MutableMethods):  # type: ignore[misc]
     """MutableSet that uses identity hashing and custom change tracking."""
 
     pass

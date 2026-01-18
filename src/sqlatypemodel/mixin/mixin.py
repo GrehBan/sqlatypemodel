@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 M = TypeVar("M", bound="BaseMutableMixin")
 
 
-class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
+class BaseMutableMixin(Mutable, MutableMethods, abc.ABC):  # type: ignore[misc]
     """Abstract Base Class for Mutable Mixins.
 
     Implements change tracking using State-based parent references. This
@@ -39,7 +39,6 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
     _max_nesting_depth: int = constants.DEFAULT_MAX_NESTING_DEPTH
     _change_suppress_level: int = 0
     _pending_change: bool = False
-    _state: MutableState[BaseMutableMixin]  # type: ignore[assignment]
 
     _parents_store: WeakKeyDictionary[MutableState[Any], str | int | None]
 
@@ -91,7 +90,7 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
         This method signals to SQLAlchemy that the object has been modified.
         It respects the change suppression level to support batched updates.
         """
-        if not events.mark_change_or_defer(self):
+        if not events.mark_change_or_defer(self):  # type: ignore[arg-type]
             return None
         return super().changed()
 
@@ -104,7 +103,7 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
         Returns:
             A context manager that suppresses change notifications.
         """
-        return events.batch_change_suppression(self)
+        return events.batch_change_suppression(self)  # type: ignore[arg-type]
 
     def _should_skip_attr(self, attr_name: str) -> bool:
         """Check if an attribute should be skipped during wrapping.
@@ -206,7 +205,7 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
             return
 
         # Get state once (avoid repeated calls)
-        state = self._state
+        state = self._state  # type: ignore[misc]
 
         # Mutable/untracked type (needs wrapping)
         if wrapping.is_mutable_and_untracked(value):
