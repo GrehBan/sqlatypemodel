@@ -5,13 +5,29 @@ sqlatypemodel
    :target: https://github.com/GrehBan/sqlatypemodel/actions/workflows/tests.yml
    :alt: Tests
 
-.. image:: https://badge.fury.io/py/sqlatypemodel.svg
-   :target: https://badge.fury.io/py/sqlatypemodel
-   :alt: PyPI version
+.. image:: https://github.com/GrehBan/sqlatypemodel/actions/workflows/lint.yml/badge.svg
+   :target: https://github.com/GrehBan/sqlatypemodel/actions/workflows/lint.yml
+   :alt: Linting
+
+.. image:: https://img.shields.io/pypi/status/sqlatypemodel.svg?style=flat-square
+    :target: https://pypi.python.org/pypi/sqlatypemodel
+    :alt: PyPi status
+
+.. image:: https://img.shields.io/pypi/v/sqlatypemodel.svg?style=flat-square
+    :target: https://pypi.python.org/pypi/sqlatypemodel
+    :alt: PyPi Package Version
 
 .. image:: https://img.shields.io/pypi/pyversions/sqlatypemodel.svg
    :target: https://pypi.org/project/sqlatypemodel/
    :alt: Python versions
+
+.. image:: https://img.shields.io/pypi/dm/sqlatypemodel.svg?style=flat-square
+    :target: https://pypi.python.org/pypi/sqlatypemodel
+    :alt: Downloads
+
+.. image:: https://img.shields.io/pypi/l/sqlatypemodel.svg?style=flat-square
+    :target: https://opensource.org/licenses/MIT
+    :alt: MIT License
 
 Typed JSON fields for SQLAlchemy with automatic mutation tracking
 ==================================================================
