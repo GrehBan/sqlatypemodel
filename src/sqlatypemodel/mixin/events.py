@@ -18,6 +18,74 @@ logger = logging.getLogger(__name__)
 flag_modified = attributes.flag_modified
 
 
+def _get_parents_snapshot(
+    obj: Trackable, parents_dict: dict[Any, Any], max_retries: int
+) -> list[tuple[Any, Any]] | None:
+    """Safely take a snapshot of the parents dictionary."""
+    for retry in range(max_retries):
+        try:
+            return list(parents_dict.items())
+        except RuntimeError:
+            if retry == max_retries - 1:
+                logger.warning(
+                    "Race condition in %s: failed to snapshot _parents.",
+                    obj.__class__.__name__,
+                )
+                return None
+        except AttributeError:
+            return None
+    return None
+
+
+def _propagate_to_parent(parent_ref: Any, key: Any) -> bool:
+    """Propagate change to a single parent. Returns True on success."""
+    # Dereference MutableState (common case, check first)
+    if isinstance(parent_ref, MutableState):
+        parent = parent_ref.ref()
+    else:
+        parent = parent_ref
+
+    if parent is None:
+        return True
+
+    # Try to call changed method (most common path)
+    changed_method = getattr(parent, "changed", None)
+    if changed_method is not None:
+        try:
+            changed_method()
+            return True
+        except Exception as e:
+            logger.error(
+                "Failed to propagate change to parent %s: %s",
+                type(parent),
+                e,
+                exc_info=True,
+            )
+            return False
+
+    # Fallback: try to get obj() method (SQLAlchemy InstanceState)
+    obj_method = getattr(parent, "obj", None)
+    if obj_method is not None and callable(obj_method):
+        try:
+            instance = obj_method()
+            if instance is not None and key:
+                flag_modified(instance, key)
+            return True
+        except Exception as e:
+            logger.error("Error flagging modified on SA model: %s", e)
+            return False
+
+    # Last resort: flag_modified on parent directly
+    if key:
+        try:
+            flag_modified(parent, key)
+            return True
+        except InvalidRequestError as e:
+            logger.error("Error flagging modified on SA model: %s", e)
+            return False
+    return True
+
+
 def safe_changed(
     obj: Trackable, max_failures: int = 10, max_retries: int = 3
 ) -> None:
@@ -25,97 +93,28 @@ def safe_changed(
 
     Handles race conditions when the `_parents` dictionary is modified
     during iteration by using a snapshot-and-retry approach.
-    It supports multiple parent types:
-    1. MutableState (Our internal wrapper for any parent)
-    2. InstanceState (SQLAlchemy's wrapper for Entities)
-    3. Direct Objects (Nested Pydantic models or Entities)
 
     Args:
         obj: The trackable instance that changed.
         max_failures: Maximum allowed propagation failures before stopping.
         max_retries: Maximum attempts to snapshot parents dictionary.
     """
-    # Fast path: no parents
     try:
         parents_dict = object.__getattribute__(obj, "_parents")
     except AttributeError:
         return
 
-    # Try to get a snapshot of parents (with retries for race conditions)
-    parents_snapshot: list[tuple[Any, Any]] | None = None
-
-    for retry in range(max_retries):
-        try:
-            # Create snapshot once, outside the exception handler
-            parents_snapshot = list(parents_dict.items())
-            break
-        except RuntimeError:
-            # Dictionary size changed during iteration
-            if retry == max_retries - 1:
-                logger.warning(
-                    "Race condition in %s: failed to snapshot _parents.",
-                    obj.__class__.__name__,
-                )
-                return
-        except AttributeError:
-            # _parents was deleted
-            return
-
+    parents_snapshot = _get_parents_snapshot(obj, parents_dict, max_retries)
     if not parents_snapshot:
         return
 
-    # Iterate through snapshot
     failure_count = 0
-
     for parent_ref, key in parents_snapshot:
         if failure_count >= max_failures:
             break
 
-        # Dereference MutableState (common case, check first)
-        if isinstance(parent_ref, MutableState):
-            parent = parent_ref.ref()
-        else:
-            parent = parent_ref
-
-        if parent is None:
-            continue
-
-        # Try to call changed method (most common path)
-        changed_method = getattr(parent, "changed", None)
-        if changed_method is not None:
-            try:
-                changed_method()
-                continue
-            except Exception as e:
-                logger.error(
-                    "Failed to propagate change to parent %s: %s",
-                    type(parent),
-                    e,
-                    exc_info=True,
-                )
-                failure_count += 1
-                continue
-
-        # Fallback: try to get obj() method (SQLAlchemy InstanceState)
-        obj_method = getattr(parent, "obj", None)
-        if obj_method is not None and callable(obj_method):
-            try:
-                instance = obj_method()
-                if instance is not None and key:
-                    flag_modified(instance, key)
-                continue
-            except Exception as e:
-                logger.error("Error flagging modified on SA model: %s", e)
-                failure_count += 1
-                continue
-
-        # Last resort: flag_modified on parent directly
-        if key:
-            try:
-                flag_modified(parent, key)
-            except InvalidRequestError as e:
-                logger.error("Error flagging modified on SA model: %s", e)
-                failure_count += 1
+        if not _propagate_to_parent(parent_ref, key):
+            failure_count += 1
 
 
 @contextmanager

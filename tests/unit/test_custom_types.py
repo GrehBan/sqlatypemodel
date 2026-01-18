@@ -44,7 +44,7 @@ class TestAttrsSupport:
 
     def test_attrs_change_tracking(self) -> None:
         if attrs_define is None:
-            return
+            pytest.skip("attrs library not installed")
 
         @attrs_define
         class AttrsModel(MutableMixin):

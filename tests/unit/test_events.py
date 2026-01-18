@@ -16,6 +16,7 @@ class TestEventPropagation:
 
         class MockParent:
             def changed(self):
+                # Mock implementation for testing
                 pass
 
         class MockTrackable:

@@ -49,7 +49,7 @@ def manual_setstate(instance: Any, state: dict[str, Any]) -> None:
             continue
         try:
             object.__setattr__(instance, key, value)
-        except Exception:
+        except (AttributeError, TypeError):
             # Attribute might be read-only or descriptor that fails on set
             pass
 

@@ -135,7 +135,13 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
         if parent_setstate:
             try:
                 parent_setstate(state)
-            except Exception:
+            except (TypeError, AttributeError, ValueError) as e:
+                logger.debug("Parent __setstate__ failed, falling back: %s", e)
+                serialization.manual_setstate(self, state)
+            except Exception as e:
+                logger.warning(
+                    "Unexpected error in parent __setstate__: %s", e
+                )
                 serialization.manual_setstate(self, state)
         else:
             serialization.manual_setstate(self, state)
@@ -162,13 +168,24 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
                     return dict(
                         serialization.cleanup_pickle_state(parent_state)
                     )
-            except Exception:
-                pass
+            except (TypeError, AttributeError) as e:
+                logger.debug("Parent __getstate__ failed: %s", e)
+            except Exception as e:
+                logger.warning(
+                    "Unexpected error in parent __getstate__: %s", e
+                )
 
         if not parent_handled:
             state.update(inspection.extract_attrs_to_scan(self))
 
         return dict(serialization.cleanup_pickle_state(state))
+
+    def _notify_if_changed(self, old_value: Any, new_value: Any) -> None:
+        """Helper to notify change if value actually changed."""
+        if old_value is constants.MISSING or inspection.should_notify_change(
+            old_value, new_value
+        ):
+            self.changed()
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Set an attribute with automatic change tracking.
@@ -197,7 +214,6 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
         # Atomic type assignment (fast path)
         if type(value) in _ATOMIC_TYPES:
             object.__setattr__(self, name, value)
-            # Notify only if value actually changed
             if (old_value is not constants.MISSING and old_value != value) or (
                 old_value is constants.MISSING
             ):
@@ -207,47 +223,35 @@ class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
         # Get state once (avoid repeated calls)
         state = self._state  # type: ignore[misc]
 
-        # Mutable/untracked type (needs wrapping)
-        if wrapping.is_mutable_and_untracked(value):
-            wrapped_value = wrapping.wrap_mutable(self, value, key=name)
+        with state._lock:
+            # Mutable/untracked type (needs wrapping)
+            if wrapping.is_mutable_and_untracked(value):
+                wrapped_value = wrapping.wrap_mutable(self, value, key=name)
+                try:
+                    parents = object.__getattribute__(
+                        wrapped_value, "_parents"
+                    )
+                    parents[state] = name
+                except AttributeError:
+                    pass
 
-            # Try fast path first (avoid hasattr)
+                object.__setattr__(self, name, wrapped_value)
+                self._notify_if_changed(old_value, wrapped_value)
+                return
+
+            # Already trackable (has _parents)
             try:
-                parents = object.__getattribute__(wrapped_value, "_parents")
+                parents = object.__getattribute__(value, "_parents")
                 parents[state] = name
+                object.__setattr__(self, name, value)
+                self._notify_if_changed(old_value, value)
+                return
             except AttributeError:
                 pass
 
-            object.__setattr__(self, name, wrapped_value)
-            if (
-                old_value is constants.MISSING
-            ) or inspection.should_notify_change(old_value, wrapped_value):
-                self.changed()
-            return
-
-        # Already trackable (has _parents)
-        try:
-            parents = object.__getattribute__(value, "_parents")
-            parents[state] = name
+            # Regular attribute (no wrapping needed)
             object.__setattr__(self, name, value)
-
-            if (
-                old_value is not constants.MISSING
-                and inspection.should_notify_change(old_value, value)
-            ) or (old_value is constants.MISSING):
-                self.changed()
-            return
-        except AttributeError:
-            pass
-
-        # Regular attribute (no wrapping needed)
-        object.__setattr__(self, name, value)
-
-        if (
-            old_value is not constants.MISSING
-            and inspection.should_notify_change(old_value, value)
-        ) or (old_value is constants.MISSING):
-            self.changed()
+            self._notify_if_changed(old_value, value)
 
     @classmethod
     def coerce(cls: type[M], key: str, value: Any) -> M | None:
@@ -388,8 +392,14 @@ class LazyMutableMixin(BaseMutableMixin, auto_register=False):
         if not wrapping.is_mutable_and_untracked(value):
             return value
 
-        wrapped = wrapping.wrap_mutable(self, value, key=name)
+        with self._state._lock:
+            # Re-check if it was wrapped while waiting for the lock
+            current_val = object.__getattribute__(self, name)
+            if current_val is not value:
+                return current_val
 
-        if wrapped is not value:
-            object.__setattr__(self, name, wrapped)
-        return wrapped
+            wrapped = wrapping.wrap_mutable(self, value, key=name)
+
+            if wrapped is not value:
+                object.__setattr__(self, name, wrapped)
+            return wrapped

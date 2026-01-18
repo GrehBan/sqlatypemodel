@@ -14,13 +14,12 @@ on:
           - testpypi
           - pypi
 
-permissions:
-  contents: read
-
 jobs:
   build:
     name: Build Distribution
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +49,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'testpypi'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     environment:
       name: testpypi
@@ -73,6 +74,8 @@ jobs:
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'pypi')
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     environment:
       name: pypi

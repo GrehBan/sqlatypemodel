@@ -60,4 +60,4 @@ __all__ = (
 try:
     __version__ = version("sqlatypemodel")
 except PackageNotFoundError:
-    __version__ = "0.8.3+unknown"
+    __version__ = "0.8.4+unknown"

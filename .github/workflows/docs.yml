@@ -16,13 +16,12 @@ on:
       - 'README.md'
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   build-docs:
     name: Build Sphinx Documentation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +74,8 @@ jobs:
     name: Check Documentation Links
     runs-on: ubuntu-latest
     needs: build-docs
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +95,8 @@ jobs:
   build-requirements:
     name: Verify Documentation Build Requirements
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4

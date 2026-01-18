@@ -41,12 +41,12 @@ class TestMemoryLeakDetection:
         initial_memory = process.memory_info().rss
 
         # Create and destroy many models
-        for cycle in range(3):  # Multiple cycles to detect gradual leaks
+        for _ in range(3):  # Multiple cycles to detect gradual leaks
             models = []
-            for i in range(1000):
+            for _ in range(1000):
                 model = MemoryEagerModel(
                     data=[f"item_{j}" for j in range(10)],
-                    nested={"key": f"value_{i}"},
+                    nested={"key": "value"},
                     tags={f"tag_{j}" for j in range(5)},
                 )
                 models.append(model)
@@ -55,7 +55,7 @@ class TestMemoryLeakDetection:
             for model in models[:100]:
                 _ = model.data[0]
                 _ = model.nested["key"]
-                model.tags.add(f"extra_tag_{i}")
+                model.tags.add("extra_tag")
 
             # Clear references
             models.clear()
@@ -80,9 +80,9 @@ class TestMemoryLeakDetection:
         process = psutil.Process()
         initial_memory = process.memory_info().rss
 
-        for cycle in range(3):
+        for _ in range(3):
             models = []
-            for i in range(1000):
+            for _ in range(1000):
                 model = MemoryLazyModel(
                     items=list(range(10)), config={"setting": True}
                 )
@@ -110,19 +110,19 @@ class TestMemoryLeakDetection:
         process = psutil.Process()
         initial_memory = process.memory_info().rss
 
-        for cycle in range(2):  # Fewer cycles due to higher memory usage
+        for _ in range(2):  # Fewer cycles due to higher memory usage
             models = []
-            for i in range(100):
+            for _ in range(100):
                 # Create deeply nested structure
                 model = MemoryEagerModel(
                     data=[
                         {
                             "nested_list": [
-                                {"deep": {"value": j} for j in range(5)}
-                                for k in range(3)
+                                {"deep": [{"value": j} for j in range(5)]}
+                                for _ in range(3)
                             ]
                         }
-                        for i in range(10)
+                        for _ in range(10)
                     ],
                     nested={
                         f"level1_{i}": {
@@ -277,9 +277,9 @@ class TestWeakReferenceBehavior:
                 break
 
         # State should be cleaned up (though may take time due to tracking refs)
-        assert (
-            state_weak() is None or state_weak() is not None
-        )  # Just ensure no crash
+        _ = state_weak()  # Just ensure no crash accessing it
+
+        # State should be cleaned up (though may take time due to tracking refs)
 
 
 class TestGarbageCollectionPatterns:

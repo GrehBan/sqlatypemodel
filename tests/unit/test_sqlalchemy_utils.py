@@ -16,7 +16,7 @@ class TestSqlAlchemyUtils:
             "sqlatypemodel.util.sqlalchemy.sa_create_engine"
         ) as mock_create:
             create_engine("sqlite:///")
-            args, kwargs = mock_create.call_args
+            _, kwargs = mock_create.call_args
             assert "json_serializer" in kwargs
             assert "json_deserializer" in kwargs
 
@@ -24,6 +24,6 @@ class TestSqlAlchemyUtils:
             "sqlatypemodel.util.sqlalchemy.sa_create_async_engine"
         ) as mock_async:
             create_async_engine("sqlite+aiosqlite:///")
-            args, kwargs = mock_async.call_args
+            _, kwargs = mock_async.call_args
             assert "json_serializer" in kwargs
             assert "json_deserializer" in kwargs

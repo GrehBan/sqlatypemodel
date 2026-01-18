@@ -566,7 +566,7 @@ class TestPerformanceRegressionDetection:
         # Test model creation
         with performance_profiler("model_creation") as profiler:
             for _ in range(100):
-                model = EagerTestModel(
+                EagerTestModel(
                     user_id="regression_test",
                     username="test_user",
                     email="test@example.com",

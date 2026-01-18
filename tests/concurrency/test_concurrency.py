@@ -233,7 +233,7 @@ class TestConcurrentMutationTracking:
         def increment_counter(thread_id: int) -> None:
             try:
                 local_count = 0
-                for i in range(100):
+                for _ in range(100):
                     # Read-modify-write operation
                     current = model.counter
                     time.sleep(

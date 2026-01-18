@@ -200,10 +200,7 @@ def performance_context() -> Generator[Callable[[], float], None, None]:
     def get_elapsed() -> float:
         return time.perf_counter() - start_time
 
-    try:
-        yield get_elapsed
-    finally:
-        pass
+    yield get_elapsed
 
 
 @pytest.fixture

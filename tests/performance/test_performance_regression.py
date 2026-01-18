@@ -279,10 +279,7 @@ class TestPerformanceRegression:
 
         # Create deeply nested model
         deep_model = PerfEagerModel(
-            data=[
-                {"nested": {"deep": {"value": i}} for i in range(10)}
-                for _ in range(10)
-            ],
+            data=[{"nested": {"deep": {"value": i}}} for i in range(10)],
             nested={
                 f"level1_{i}": {
                     f"level2_{j}": {
@@ -417,7 +414,7 @@ class TestPerformanceRegression:
                     data=[f"item_{j}" for j in range(10)],
                     nested={f"key_{j}": f"value_{j}" for j in range(5)},
                 )
-                for i in range(100)
+                for _ in range(100)
             ]
 
         @benchmark.measure("bulk_lazy_creation", iterations=100)
@@ -427,7 +424,7 @@ class TestPerformanceRegression:
                     items=[f"item_{j}" for j in range(10)],
                     config={f"key_{j}": f"value_{j}" for j in range(5)},
                 )
-                for i in range(100)
+                for _ in range(100)
             ]
 
         @benchmark.measure("bulk_mutation", iterations=50)

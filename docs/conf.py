@@ -8,8 +8,8 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "sqlatypemodel"
 copyright = "2026, GrehBan"
 author = "GrehBan"
-version = "0.8.3"
-release = "0.8.3"
+version = "0.8.4"
+release = "0.8.4"
 
 extensions = [
     "sphinx.ext.autodoc",

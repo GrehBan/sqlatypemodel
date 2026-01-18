@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import threading
 import types
 from typing import Any, cast
 
@@ -18,21 +20,32 @@ from sqlatypemodel.mixin.types import (
 )
 from sqlatypemodel.util import constants
 
+logger = logging.getLogger(__name__)
+
+_STATE_CREATION_LOCK = threading.Lock()
+
 
 def get_or_create_state(parent: Trackable | Any) -> MutableState[Any]:
     """Retrieves or creates a MutableState identity token (optimized)."""
+    # Double-checked locking pattern for performance
     state = getattr(parent, "_state", None)
     if state is not None:
         return cast(MutableState[Any], state)
 
-    state = MutableState(parent)
-    parent_dict = getattr(parent, "__dict__", None)
-    key = "_state"
-    if parent_dict is not None and "_state" in parent_dict:
-        key = "_state_inst"
+    with _STATE_CREATION_LOCK:
+        # Re-check inside lock
+        state = getattr(parent, "_state", None)
+        if state is not None:
+            return cast(MutableState[Any], state)
 
-    object.__setattr__(parent, key, state)
-    return state
+        state = MutableState(parent)
+        parent_dict = getattr(parent, "__dict__", None)
+        key = "_state"
+        if parent_dict is not None and "_state" in parent_dict:
+            key = "_state_inst"
+
+        object.__setattr__(parent, key, state)
+        return state
 
 
 def _wrap_list(
@@ -124,8 +137,8 @@ def wrap_mutable(
         return value
 
     parent_state = get_or_create_state(parent)
-
     obj_id = id(value)
+
     if _seen is None:
         _seen = {}
     elif obj_id in _seen:
@@ -142,14 +155,30 @@ def wrap_mutable(
     if depth > max_depth_limit:
         return value
 
+    return _handle_wrapping(
+        parent_state, value, _seen, depth, key, max_depth_limit
+    )
+
+
+def _handle_wrapping(
+    parent_state: MutableState[Any],
+    value: Any,
+    _seen: dict[int, Any],
+    depth: int,
+    key: str | int | None,
+    max_depth: int,
+) -> Any:
+    """Internal router for different wrapping strategies."""
+    obj_id = id(value)
+
+    # 1. Trackable models (Pydantic, etc.)
     if getattr(value, "_parents", None) is not None:
         _seen[obj_id] = value
-        wrapped_model = _wrap_trackable(
-            value, _seen, depth, key, max_depth_limit
-        )
+        _wrap_trackable(value, _seen, depth, max_depth)
         parent_state.link(value, key)
-        return wrapped_model
+        return value
 
+    # 2. Already wrapped collections
     if isinstance(value, MutableList | MutableDict | MutableSet):
         _seen[obj_id] = value
         if getattr(value, "changed", None) is not events.safe_changed:
@@ -159,10 +188,10 @@ def wrap_mutable(
         parent_state.link(value, key)
         return value
 
+    # 3. Standard collections (list, dict, set)
     wrapper_func = _WRAP_DISPATCH.get(type(value))  # type: ignore[call-overload]
     if wrapper_func:
-        # Pass max_depth_limit explicitly
-        wrapped = wrapper_func(value, _seen, depth, key, max_depth_limit)
+        wrapped = wrapper_func(value, _seen, depth, key, max_depth)
         parent_state.link(wrapped, key)
         return wrapped
 
@@ -173,7 +202,6 @@ def _wrap_trackable(
     value: Trackable,
     _seen: dict[int, Any],
     depth: int,
-    key: str | int | None,
     max_depth: int,
 ) -> Trackable:
     """Wrap a trackable object and scan its children (optimized)."""
@@ -181,9 +209,9 @@ def _wrap_trackable(
     value_cls = type(value)
 
     for attr_name, attr_val in attrs.items():
-        if attr_name.startswith("_"):
-            continue
-        if inspection.ignore_attr_name(value_cls, attr_name):
+        if attr_name.startswith("_") or inspection.ignore_attr_name(
+            value_cls, attr_name
+        ):
             continue
 
         wrapped_attr = wrap_mutable(
@@ -307,5 +335,9 @@ def scan_and_wrap_fields(
 
             if hasattr(wrapped, "_restore_tracking"):
                 wrapped._restore_tracking(_seen=_seen)
-        except Exception:
-            pass
+        except (AttributeError, TypeError) as e:
+            logger.debug("Failed to wrap attribute %s: %s", attr_name, e)
+        except Exception as e:
+            logger.warning(
+                "Unexpected error wrapping attribute %s: %s", attr_name, e
+            )

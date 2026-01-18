@@ -367,7 +367,7 @@ class TestPerformanceCharacteristics:
 
         # Create models and check that they don't use excessive memory
         models = []
-        for i in range(100):
+        for _ in range(100):
             model = ModelFactory.create_eager_model()
             # Clear default tags and add controlled number
             model.tags.clear()
@@ -417,14 +417,14 @@ class TestErrorHandling:
             model.tags = "not_a_list"
             # If it doesn't raise, check that it's been handled appropriately
             assert not isinstance(model.tags, str)
-        except (TypeError, ValueError, Exception):
+        except Exception:
             pass  # Expected to handle gracefully
 
         try:
             model.settings = "not_a_dict"
             # If it doesn't raise, check that it's been handled appropriately
             assert not isinstance(model.settings, str)
-        except (TypeError, ValueError, Exception):
+        except Exception:
             pass
 
         # Valid assignments should work

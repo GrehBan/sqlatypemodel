@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] - 2026-01-18
+
+### 🛡️ Thread Safety & Robustness
+- **State Creation**: Implemented thread-safe `MutableState` creation using double-checked locking and a module-level lock. Prevents race conditions where multiple identity tokens could be created for the same object.
+- **Mixin Mutations**: Added thread safety to `BaseMutableMixin.__setattr__` by using the state's internal recursive lock during wrapping and parent linkage.
+- **Lazy Loading**: Added thread-safe JIT wrapping to `LazyMutableMixin.__getattribute__`, preventing concurrent access from creating duplicate wrappers.
+
+### 🐛 Bug Fixes & Improvements
+- **Exception Handling**: Refined broad `except Exception` blocks across the project. Replaced with specific exception types (`AttributeError`, `TypeError`, `ValueError`) and added descriptive logging for unexpected failures.
+- **Linting**: Fixed various linting issues including line length violations and unused imports.
+- **CI/CD**: Updated `tests.yml` to use `codecov-action@v5` and enabled test results reporting via `junitxml`.
+
 ## [0.8.3] - 2026-01-18
 
 ### 🐛 Bug Fixes

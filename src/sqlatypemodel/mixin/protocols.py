@@ -6,6 +6,7 @@ as well as base implementations for common tracking functionality.
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Protocol, TypeVar, cast, runtime_checkable
 from weakref import WeakKeyDictionary
 
@@ -14,9 +15,8 @@ from sqlalchemy.ext.mutable import MutableDict, MutableList, MutableSet
 from sqlatypemodel.mixin import events
 from sqlatypemodel.mixin.state import MutableState
 
-__all__ = ("Trackable", "MutableMethods", "MutableMixinProto")
-
 T = TypeVar("T", bound="Trackable")
+_STATE_LOCK = threading.RLock()
 
 _COLLECTION_TYPES: tuple[type, ...] = (
     MutableList,
@@ -125,9 +125,17 @@ class MutableMethods:
                 MutableState[T], object.__getattribute__(self, "_state_inst")
             )
         except AttributeError:
-            val = MutableState(self)
-            object.__setattr__(self, "_state_inst", val)
-            return val
+            with _STATE_LOCK:
+                # Re-check inside lock
+                try:
+                    return cast(
+                        MutableState[T],
+                        object.__getattribute__(self, "_state_inst"),
+                    )
+                except AttributeError:
+                    val = MutableState(self)
+                    object.__setattr__(self, "_state_inst", val)
+                    return val
 
     def changed(self) -> None:
         """Notify parents using the library's safe propagation logic."""

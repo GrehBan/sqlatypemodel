@@ -1,5 +1,6 @@
 """Tests for database-specific behavior and compatibility."""
 
+import math
 import os
 from collections.abc import Generator
 from typing import Any
@@ -567,7 +568,7 @@ class TestDatabaseSpecificEdgeCases:
 
             # Check float preservation (allowing for JSON precision limits)
             result_float = deserialized.metadata["test_float"]
-            if not (test_float != test_float):  # Not NaN
+            if not math.isnan(test_float):  # Not NaN
                 # For infinity, check that it's handled gracefully
                 if test_float == float("inf") or test_float == float("-inf"):
                     # Infinity might be converted to null or a large number or preserved

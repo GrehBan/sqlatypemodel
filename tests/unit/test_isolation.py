@@ -345,7 +345,9 @@ class DatabaseCleaner:
 
 
 @pytest.fixture
-def database_cleaner(session: Session) -> DatabaseCleaner:
+def database_cleaner(
+    session: Session,
+) -> Generator[DatabaseCleaner, None, None]:
     """Provide a database cleaner."""
     cleaner = DatabaseCleaner()
 

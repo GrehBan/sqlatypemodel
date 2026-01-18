@@ -59,8 +59,12 @@ def _ignore_attr_name_inner(cls: type[Any], attr_name: str) -> bool:
         descriptor = getattr(cls, attr_name, None)
         if is_descriptor_property(descriptor) or callable(descriptor):
             return True
+    except (AttributeError, TypeError):
+        # Fallback for objects with broken getattr or unhashable types
+        return False
     except Exception:
-        pass
+        # Unexpected error, assume not ignored for safety
+        return False
 
     return False
 
@@ -144,6 +148,9 @@ def should_notify_change(old_value: Any, new_value: Any) -> bool:
     # Equality check (might be expensive for custom objects)
     try:
         return bool(old_value != new_value)
+    except (TypeError, ValueError):
+        # If comparison is not supported between these types, assume change
+        return True
     except Exception:
-        # If comparison fails, assume change
+        # Unexpected error during comparison
         return True
