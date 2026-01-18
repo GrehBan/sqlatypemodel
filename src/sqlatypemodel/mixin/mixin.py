@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 M = TypeVar("M", bound="BaseMutableMixin")
 
 
-class BaseMutableMixin(Mutable, MutableMethods, abc.ABC):  # type: ignore[misc]
+class BaseMutableMixin(MutableMethods, Mutable, abc.ABC):  # type: ignore[misc]
     """Abstract Base Class for Mutable Mixins.
 
     Implements change tracking using State-based parent references. This

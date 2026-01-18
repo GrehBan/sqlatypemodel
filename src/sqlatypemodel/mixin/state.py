@@ -34,6 +34,18 @@ class MutableState(Generic[T]):
         self.ref: weakref.ReferenceType[T] = weakref.ref(obj)
         self._lock = threading.RLock()
 
+    def obj(self) -> T | None:
+        """Return the parent object from the weak reference.
+
+        This method fulfills the SQLAlchemy Mutable parent protocol,
+        allowing this state token to be used directly in SQLAlchemy's
+        `_parents` dictionary.
+
+        Returns:
+            The dereferenced parent object, or None if it has been collected.
+        """
+        return self.ref()
+
     def link(self, child: Trackable | Any, key: str | int | None) -> None:
         """Establish a tracking connection between this state and a child.
 
